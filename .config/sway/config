@@ -1,0 +1,428 @@
+######################################################################################################
+### Sway configuration ###############################################################################
+######################################################################################################
+
+
+######################################################################################################
+### General settings
+######################################################################################################
+
+# Leave XWayland enabled for now, many applications don't work without the X fallback.
+xwayland enable
+
+
+######################################################################################################
+### Variables
+######################################################################################################
+
+# Use Windows keys as modifier (Mod1 is ALT)
+set $mod Mod4
+
+# Home row direction keys, like vim
+set $left h
+set $down j
+set $up k
+set $right l
+
+# Standard applications
+set $terminal kitty
+set $editor featherpad --standalone
+set $browser firefox
+set $mailclient thunderbird
+set $filemanager ranger
+
+# Application launcher
+set $menu j4-dmenu-desktop --dmenu=${HOME}/.config/sway/menu.sh --no-generic --term=$terminal
+
+# Primary output (integrated display connected to eDP port of the integrated GPU)
+set $primary_output 'eDP-1'
+
+# Secondary output (external display connected to USB-C/DP port of the integrated GPU)
+set $secondary_output 'DP-2'
+
+# The keyboard input
+set $keyboard_input '1:1:AT_Translated_Set_2_keyboard'
+
+# Message displayed when you exit sway.
+set $exitmsg 'You pressed the exit shortcut. Do you really want to exit sway? This will end your Wayland session.'
+
+
+######################################################################################################
+### Output configuration
+######################################################################################################
+
+# Display panel is a BOE NV156FH (WVA, BOE084A)
+output $primary_output {
+    background /usr/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
+    resolution 1920x1080
+    position 0,0
+    subpixel rgb
+}
+
+output $secondary_output {
+    background #808080 solid_color
+    resolution 1920x1080
+    position 1920,0
+    disable
+}
+
+
+######################################################################################################
+### Idle configuration
+######################################################################################################
+
+exec swayidle -w \
+    timeout 600 "${HOME}/.config/sway/idle.py --lock" \
+    timeout 900 "${HOME}/.config/sway/idle.py --display-off" \
+        resume "${HOME}/.config/sway/idle.py --display-on" \
+    lock "${HOME}/.config/sway/idle.py --lock"
+
+
+######################################################################################################
+### Input configuration
+######################################################################################################
+
+# Disable all keyboard, pointer and switch devices by default
+input type:keyboard events disabled
+input type:pointer events disabled
+input type:switch events disabled
+
+input "2:14:ETPS/2_Elantech_Touchpad" {
+    events enabled
+    dwt enabled
+    tap enabled
+    middle_emulation enabled
+    natural_scroll disabled
+}
+
+input $keyboard_input {
+    events enabled
+    xkb_model pc105
+    xkb_layout de,us
+    xkb_variant nodeadkeys
+    xkb_rules evdev
+    xkb_options grp:win_space_toggle,compose:rctrl
+    repeat_delay 300
+}
+
+input "5426:132:Razer_Razer_DeathAdder_V2" {
+    events enabled
+    natural_scroll disabled
+}
+
+
+######################################################################################################
+### Key bindings
+######################################################################################################
+
+    ##################################################################################################
+    ## Basics:
+
+    # Start a terminal
+    bindsym $mod+Return exec $terminal
+
+    # Start the editor
+    bindsym $mod+BackSpace exec $editor
+
+    # Kill focused window
+    bindsym $mod+Shift+q kill
+
+    # Start your launcher
+    bindsym $mod+d exec $menu
+
+    # Drag floating windows by holding down $mod and left mouse button.
+    # Resize them with right mouse button + $mod.
+    # Despite the name, also works for non-floating windows.
+    # Change normal to inverse to use left mouse button for resizing and right
+    # mouse button for dragging.
+    floating_modifier $mod normal
+
+    # Reload the configuration file
+    bindsym $mod+Shift+c reload
+
+    # Switch primary output back on
+    bindsym --locked $mod+Shift+F7 output $primary_output power on
+
+    # Immediately lock the screen
+    bindsym --release $mod+Shift+delete exec loginctl lock-session
+
+    # Exit sway (logs you out of your Wayland session)
+    bindsym $mod+Shift+e exec swaynag --type warning --message $exitmsg --button 'Yes, exit sway' ${HOME}/.config/sway/exit-session.sh
+
+    # CPU performance mode selection
+    bindsym $mod+Shift+p exec ${HOME}/.config/sway/cpuperf.sh
+
+    # Toggle secondary output on/off
+    bindsym $mod+Shift+o output $secondary_output toggle
+
+    # External display configuration
+    bindsym $mod+Shift+i exec ${HOME}/.config/sway/dispconf.sh $secondary_output
+
+    ##################################################################################################
+    ## Screenshots:
+
+    # Screenshot of the entire screen
+    bindsym $mod+Print exec ${HOME}/local/bin/swayshot.py --full
+
+    # Screenshot of selected area of screen
+    bindsym $mod+Shift+Print exec ${HOME}/local/bin/swayshot.py --select
+
+    ##################################################################################################
+    ## Multimedia keys:
+
+    # Volume raise/lower/mute
+    bindsym --locked XF86AudioRaiseVolume exec pactl set-sink-volume @DEFAULT_SINK@ +5%
+    bindsym --locked XF86AudioLowerVolume exec pactl set-sink-volume @DEFAULT_SINK@ -5%
+    bindsym --locked XF86AudioMute exec pactl set-sink-mute @DEFAULT_SINK@ toggle
+
+    # Audio play/next/prev
+    bindsym --locked XF86AudioPlay exec ${HOME}/.config/sway/multimedia.py --play
+    bindsym --locked XF86AudioNext exec ${HOME}/.config/sway/multimedia.py --next
+    bindsym --locked XF86AudioPrev exec ${HOME}/.config/sway/multimedia.py --prev
+
+    ##################################################################################################
+    ## Moving around:
+
+    # Move your focus around
+    bindsym $mod+$left focus left
+    bindsym $mod+$down focus down
+    bindsym $mod+$up focus up
+    bindsym $mod+$right focus right
+    # Or use $mod+[up|down|left|right]
+    bindsym $mod+Left focus left
+    bindsym $mod+Down focus down
+    bindsym $mod+Up focus up
+    bindsym $mod+Right focus right
+
+    # Move the focused window with the same, but add Shift
+    bindsym $mod+Shift+$left move left
+    bindsym $mod+Shift+$down move down
+    bindsym $mod+Shift+$up move up
+    bindsym $mod+Shift+$right move right
+    # Ditto, with arrow keys
+    bindsym $mod+Shift+Left move left
+    bindsym $mod+Shift+Down move down
+    bindsym $mod+Shift+Up move up
+    bindsym $mod+Shift+Right move right
+
+    ##################################################################################################
+    ## Workspaces:
+
+    # Assign workspaces to outputs
+    workspace '1:browser' output $primary_output
+    workspace '2:mail' output $primary_output
+    workspace '3:chat' output $primary_output
+    workspace '4:music' output $primary_output
+    workspace '5:video' output $primary_output
+    workspace '6:work' output $primary_output
+    workspace '7:files' output $primary_output
+    workspace '8:wine' output $primary_output
+    workspace '9:extern' output $primary_output $secondary_output
+
+    # Switch to workspace
+    bindsym $mod+1 workspace '1:browser'
+    bindsym $mod+2 workspace '2:mail'
+    bindsym $mod+3 workspace '3:chat'
+    bindsym $mod+4 workspace '4:music'
+    bindsym $mod+5 workspace '5:video'
+    bindsym $mod+6 workspace '6:work'
+    bindsym $mod+7 workspace '7:files'
+    bindsym $mod+8 workspace '8:wine'
+    bindsym $mod+9 workspace '9:extern'
+
+    # Move focused container to workspace
+    bindsym $mod+Shift+1 move container to workspace '1:browser'
+    bindsym $mod+Shift+2 move container to workspace '2:mail'
+    bindsym $mod+Shift+3 move container to workspace '3:chat'
+    bindsym $mod+Shift+4 move container to workspace '4:music'
+    bindsym $mod+Shift+5 move container to workspace '5:video'
+    bindsym $mod+Shift+6 move container to workspace '6:work'
+    bindsym $mod+Shift+7 move container to workspace '7:files'
+    bindsym $mod+Shift+8 move container to workspace '8:wine'
+    bindsym $mod+Shift+9 move container to workspace '9:extern'
+
+    # Note: workspaces can have any name you want, not just numbers.
+    # We just use 1-10 as the default.
+
+    # Inhibit idle and move focused container to output
+    bindsym $mod+Shift+0 inhibit_idle open, move container to output $secondary_output
+
+    ##################################################################################################
+    ## Layout stuff:
+
+    # You can "split" the current object of your focus with
+    # $mod+b or $mod+v, for horizontal and vertical splits
+    # respectively.
+    bindsym $mod+b splith
+    bindsym $mod+v splitv
+
+    # Switch the current container between different layout styles
+    bindsym $mod+s layout stacking
+    bindsym $mod+w layout tabbed
+    bindsym $mod+e layout toggle split
+
+    # Make the current focus fullscreen
+    bindsym $mod+f fullscreen
+
+    # Toggle the current focus between tiling and floating mode
+    bindsym $mod+Shift+space floating toggle
+
+    # Swap focus between the tiling area and the floating area
+    bindsym $mod+space focus mode_toggle
+
+    # Move focus to the parent container
+    bindsym $mod+a focus parent
+
+    ##################################################################################################
+    ## Scratchpad:
+
+    # Sway has a "scratchpad", which is a bag of holding for windows.
+    # You can send windows there and get them back later.
+
+    # Move the currently focused window to the scratchpad
+    bindsym $mod+Shift+minus move scratchpad
+
+    # Show the next scratchpad window or hide the focused scratchpad window.
+    # If there are multiple scratchpad windows, this command cycles through them.
+    bindsym $mod+minus scratchpad show
+
+    ##################################################################################################
+    ## Resizing containers:
+
+    bindsym $mod+r mode "resize"
+
+
+######################################################################################################
+### Resizing mode
+######################################################################################################
+
+mode "resize" {
+    # left will shrink the containers width
+    # right will grow the containers width
+    # up will shrink the containers height
+    # down will grow the containers height
+    bindsym $left resize shrink width 10px
+    bindsym $down resize grow height 10px
+    bindsym $up resize shrink height 10px
+    bindsym $right resize grow width 10px
+
+    # Ditto, with arrow keys
+    bindsym Left resize shrink width 10px
+    bindsym Down resize grow height 10px
+    bindsym Up resize shrink height 10px
+    bindsym Right resize grow width 10px
+
+    # Return to default mode
+    bindsym Return mode "default"
+    bindsym Escape mode "default"
+}
+
+
+######################################################################################################
+### Status bars
+######################################################################################################
+
+# Top status bar
+bar {
+    position top
+    output $primary_output
+
+    font pango:Literation Sans 14
+    icon_theme Adwaita
+
+    strip_workspace_numbers yes
+
+    status_command ${HOME}/.config/sway/top_bar.py
+
+    colors {
+        statusline #ffffff
+        background #323232
+        inactive_workspace #32323200 #32323200 #5c5c5c
+    }
+}
+
+# Bottom status bar
+bar {
+    output $primary_output
+
+    swaybar_command waybar
+}
+
+
+include /etc/sway/config.d/*
+
+
+######################################################################################################
+### Other setup
+######################################################################################################
+
+
+# Notification daemon
+exec mako
+
+# Setup IM framework
+#exec fcitx -r
+
+# This is needed for xdg-desktop-portal-wlr
+exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=sway
+
+
+######################################################################################################
+### Floating windows
+######################################################################################################
+
+# This application is launched from the Waybar CPU module
+for_window [app_id="htop"] floating enable; resize set width 75ppt; resize set height 75ppt
+
+# The Orage calendar window is too small, so only floating makes sense
+for_window [class="Orage"] floating enable
+
+
+######################################################################################################
+### Setup workspaces
+######################################################################################################
+
+font pango:Literation Sans 14
+
+workspace_layout tabbed
+
+# browser workspace
+for_window [app_id="firefox"] move container to workspace '1:browser'
+for_window [app_id="chromium-browser-chromium"] move container to workspace '1:browser'
+
+# mail workspace
+for_window [app_id="thunderbird"] move container to workspace '2:mail'
+for_window [instance="pinentry-gtk-2"] floating enable
+
+# chat workspace
+for_window [instance="hexchat"] move container to workspace '3:chat'
+for_window [class="discord" instance="discord"] move container to workspace '3:chat'
+
+# music workspace
+for_window [instance="gmpc"] move container to workspace '4:music'
+for_window [app_id="cmus"] move container to workspace '4:music'
+for_window [app_id="pavucontrol"] move container to workspace '4:music'
+
+# video workspace
+for_window [app_id="mpv"] move container to workspace '5:video'
+for_window [app_id="mpv-extern"] move container to workspace '9:extern'; fullscreen
+
+# files workspace
+for_window [app_id="$filemanager"] move container to workspace '7:files'
+
+# wine workspace
+for_window [class="Wine" instance="(eac|foobar2000).exe"] move container to workspace '8:wine'
+
+
+exec {
+    $browser
+    $mailclient
+    hexchat
+    $terminal --class cmus cmus
+    $terminal --class $filemanager $filemanager
+}
+
+workspace '6:work'
+exec $terminal
+
+exec /usr/local/bin/touchpad_control.sh --auto

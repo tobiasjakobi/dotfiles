@@ -1,0 +1,73 @@
+{
+    "layer": "top",
+    "output": "eDP-1",
+    "position": "bottom",
+    "height": 30, // Waybar height (to be removed for auto height)
+
+    // Order of modules
+    "modules-left": ["cpu", "memory", "network#eth", "network#wifi"],
+    "modules-right": ["custom/musicpd", "custom/cmus", "custom/rifle-monitor"],
+
+    // Modules configuration
+    "cpu": {
+        "format": "CPU: {usage}%",
+        "tooltip": false,
+        "on-click": "kitty --class htop htop"
+    },
+    "memory": {
+        "format": "RAM: {percentage}% used"
+    },
+    "network#eth": {
+        "interface": "enp5s0",
+        "format-ethernet": "Eth: ",
+        /* TODO: network module does not correct detect disconnected ethernet */
+        "format-linked": "Eth: ",
+        "format-disconnected": "Eth: Down",
+        "tooltip-format-ethernet": "{ifname}: {bandwidthUpOctets} {bandwidthDownOctets}",
+        "tooltip-format-disconnected": "Disconnected",
+        "max-length": 50
+    },
+    "network#wifi": {
+        "interface": "wlp6s0",
+        "format-wifi": "WiFi: {essid} ",
+        "format-disconnected": "WiFi: Down",
+        "tooltip-format-wifi": "{ifname}: {signalStrength}% signal",
+        "tooltip-format-disconnected": "Disconnected",
+        "max-length": 50
+    },
+    "custom/alsamixer": {
+        "format": "AMixer: {}",
+        "return-type": "json",
+        "max-length": 30,
+        "exec": "${HOME}/.config/waybar/alsamixer.py --daemon",
+        "on-scroll-up": "${HOME}/.config/waybar/alsamixer.py --action=volume_up",
+        "on-scroll-down": "${HOME}/.config/waybar/alsamixer.py --action=volume_down"
+    },
+    "custom/musicpd": {
+        "format": "MusicPD: {}",
+        "return-type": "json",
+        "max-length": 30,
+        "exec": "${HOME}/.config/waybar/musicpd.py",
+        "on-click": "mpc --quiet toggle",
+        "on-click-right": "gmpc",
+        "on-scroll-up": "mpc --quiet next",
+        "on-scroll-down": "mpc --quiet prev",
+        "escape": true
+    },
+    "custom/cmus": {
+        "format": "CMus: {}",
+        "return-type": "json",
+        "max-length": 30,
+        "exec": "${HOME}/.config/waybar/cmus.py",
+        "on-click": "cmus-remote --pause",
+        "on-scroll-up": "cmus-remote --next",
+        "on-scroll-down": "cmus-remote --prev",
+        "escape": true
+    },
+    "custom/rifle-monitor": {
+        "format": "Rifle: {0:2}",
+        "return-type": "json",
+        "exec": "${HOME}/.config/waybar/rifle_monitor.py",
+        "escape": true
+    }
+}
