@@ -1,0 +1,8 @@
+[info]
+edge=bottom
+background=00b3a6
+border=000000
+border-bottom=00b3a6
+text=FFFFFF
+button-background=0073b3
+message-padding=10

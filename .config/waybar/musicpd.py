@@ -42,6 +42,12 @@ class MPDException(Exception):
 # Functions
 ##########################################################################################
 
+def _html_escape2(input: str) -> str:
+    if input is None:
+        return None
+
+    return html_escape(input)
+
 def _callmpc(args: list):
     p_args = ['/usr/bin/mpc'] + args
 
@@ -119,8 +125,8 @@ def musicpd_refresh():
     except:
         mpc_short = 'silence'
 
-    status['text'] = html_escape(mpc_short)
-    status['tooltip'] = html_escape(mpc_long)
+    status['text'] = _html_escape2(mpc_short)
+    status['tooltip'] = _html_escape2(mpc_long)
 
     pipe_lost = False
 

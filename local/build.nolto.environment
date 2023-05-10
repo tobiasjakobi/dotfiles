@@ -1,0 +1,6 @@
+export OPTFLAGS="-O2 -march=native -fno-stack-protector"
+export CFLAGS="${OPTFLAGS} -pipe -I$HOME/local/include -L$HOME/local/lib64"
+export CXXFLAGS="${CFLAGS}"
+export LDFLAGS="-Wl,--as-needed,-O1 -L$HOME/local/lib64"
+export LD_LIBRARY_PATH="$HOME/local/lib64"
+export PKG_CONFIG_PATH="$HOME/local/lib64/pkgconfig"

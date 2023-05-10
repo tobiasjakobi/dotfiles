@@ -1,0 +1,4 @@
+read_device: "/dev/optical/virtual_cd"
+read_driver: "generic-mmc-raw"
+write_device: "/dev/optical/virtual_cd"
+write_driver: "generic-mmc-raw"

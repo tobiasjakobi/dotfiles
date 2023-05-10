@@ -1,0 +1,36 @@
+[[ ${_ENVIRONMENT_SETUP} -eq 1 ]] && return
+
+# GTK settings
+export GTK_THEME=Adwaita:dark
+
+# Cursor theme
+export XCURSOR_THEME=Obsidian
+
+# MusicPD settings
+export MPD_HOST=audioserver
+
+# Bash settings
+export QUOTING_STYLE=literal
+export HISTSIZE=1000
+export HISTCONTROL=ignoreboth:erasedups
+
+# Python settings
+export PYTHONPATH=${HOME}/local/bin:
+
+# Path settings
+export PATH=${HOME}/local/bin:${PATH}:${HOME}/.local/bin
+
+# Java settings
+export _JAVA_OPTIONS="-Dawt.useSystemAAFontSettings=on -Dswing.aatext=true -Dsun.java2d.opengl=true"
+
+# ranger/rifle settings
+export RANGER_LOAD_DEFAULT_RC=FALSE
+export RIFLE_CMDSTAT_FIFO="/run/user/${UID}/rifle-cmdstat.sock"
+
+# IM settings
+#export GTK_IM_MODULE=fcitx
+#export QT_IM_MODULE=fcitx
+#export XMODIFIERS=@im=fcitx
+
+# Avoid doing environment setup multiple times.
+export _ENVIRONMENT_SETUP=1
