@@ -10,6 +10,8 @@ import sys
 
 from os.path import join as pjoin
 
+from sysfs_helper import read_sysfs
+
 
 ##########################################################################################
 # Constants
@@ -23,17 +25,7 @@ _sysfs_base = '/sys/class/power_supply/BAT0'
 # Functions
 ##########################################################################################
 
-def read_sysfs(path: str):
-    try:
-        with open(path, mode='r') as f:
-            data = f.read().rstrip()
-
-    except Exception:
-        data = None
-
-    return data
-
-def read_battery():
+def read_battery() -> str:
     try:
         charge_now = int(read_sysfs(pjoin(_sysfs_base, 'charge_now')))
         charge_full = int(read_sysfs(pjoin(_sysfs_base, 'charge_full')))
@@ -61,7 +53,7 @@ def read_battery():
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     ret = read_battery()
     if ret is None:
         print('error: battery not found', file=sys.stderr)

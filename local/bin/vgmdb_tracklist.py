@@ -17,6 +17,7 @@ from getopt import GetoptError, getopt
 from json import JSONDecodeError, loads as jloads
 from multiprocessing import Pool
 from pathlib import Path
+from time import sleep
 from urllib.request import HTTPError, Request, urlopen
 
 from vc_addtag import addtag
@@ -272,6 +273,37 @@ class CheckMode(IntEnum):
 
 
 ##########################################################################################
+# Internal functions
+##########################################################################################
+
+def _read_url(url: str) -> str:
+    '''
+    Read an URL an return the content as string.
+    '''
+
+    req_retries = 5
+    req_data = None
+
+    while req_data is None and req_retries != 0:
+        try:
+            req = Request(url)
+            with urlopen(req) as response:
+                req_data = response.read()
+
+        except HTTPError as err:
+            if err.code != 503:
+                raise RuntimeError(f'failed to read URL: {err}')
+
+        req_retries -= 1
+        sleep(2.0)
+
+    if req_data is None:
+        raise RuntimeError('timeout while reading URL')
+
+    return req_data
+
+
+##########################################################################################
 # Main
 ##########################################################################################
 
@@ -348,12 +380,10 @@ def main(args: list) -> int:
     album_url = _ALBUM_URL_TEMPLATE.format(album_id)
 
     try:
-        req = Request(album_url)
-        with urlopen(req) as response:
-            raw = response.read()
+        raw = _read_url(album_url)
 
-    except HTTPError as err:
-        print(f'error: failed to fetch album data: {album_url}: {err}', file=sys.stderr)
+    except Exception as exc:
+        print(f'error: failed to fetch album URL: {exc}', file=sys.stderr)
 
         return 7
 

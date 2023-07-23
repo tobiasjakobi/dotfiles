@@ -11,7 +11,7 @@ import sys
 
 from json import load as jload
 from os.path import basename, expandvars, join as pjoin
-from os import environ
+from os import environ, sched_setaffinity
 from subprocess import run as prun
 from time import time
 
@@ -22,15 +22,24 @@ from time import time
 
 _pulseaudio_tcp_port = 4713
 _config_path_template = '${HOME}/.config/pulseserver_wrap.conf'
-_flatpak_args = ['/usr/bin/flatpak', 'run', '--branch=stable', '--arch=x86_64', '--command=sh']
-_schedtool_template = '${HOME}/local/bin/schedtool'
-_affinity_settings = '0,2,4,6'
+_flatpak_args_template = ('/usr/bin/flatpak', 'run', '--branch=stable', '--arch=x86_64', '--filesystem=home', '--command={0}')
+_env_helper_template = '${HOME}/local/bin/flatpak_env_helper.sh'
+_affinity_mask = (0, 2, 4, 6)
 _logfile_template = '${HOME}/local/log'
 
 
 ##########################################################################################
 # Internal functions
 ##########################################################################################
+
+def _defer_func(func, *parms, **kwparms):
+    def caller():
+        func(*parms, **kwparms)
+
+    return caller
+
+def _make_flatpak_args(cmd: str) -> list[str]:
+    return [x.format(cmd) for x in _flatpak_args_template]
 
 def _is_server_available(server: str) -> bool:
     '''
@@ -154,23 +163,31 @@ def pulseserver_wrap(args: list[str]) -> int:
     if flatpak:
         print('info: flatpak mode enabled', file=sys.stdout)
 
+        env_helper = expandvars(_env_helper_template)
+
         logfile_base = 'flatpak'
-        args = _flatpak_args + args
+        args = _make_flatpak_args(env_helper) + args
+
     else:
         logfile_base = basename(args[0])
 
     if affinity:
         print('info: fixing core affinity', file=sys.stdout)
 
-        args = [expandvars(_schedtool_template), '-a', _affinity_settings, '-e'] + args
+        affinity_func = _defer_func(sched_setaffinity, 0, _affinity_mask)
+    else:
+        affinity_func = None
 
     logfile_path = pjoin(expandvars(_logfile_template), f'{logfile_base}.{int(time())}.log')
 
-    if direct:
-        _p = prun(args, env=p_env, check=False)
-    else:
-        _p = prun(args, env=p_env, check=False, capture_output=True, encoding='utf-8')
+    p_named_args = {'env': p_env, 'check': False, 'preexec_fn': affinity_func}
 
+    if not direct:
+        p_named_args.update({'capture_output': True, 'encoding': 'utf-8'})
+
+    _p = prun(args, **p_named_args)
+
+    if not direct:
         with open(logfile_path, mode='w', encoding='utf-8') as _f:
             if len(_p.stdout) != 0:
                 print(f'info: stdout for: {args}', file=_f)

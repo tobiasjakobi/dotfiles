@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 font="Liberation Sans 16"
 white="#ffffff"

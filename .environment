@@ -15,7 +15,7 @@ export HISTSIZE=1000
 export HISTCONTROL=ignoreboth:erasedups
 
 # Python settings
-export PYTHONPATH=${HOME}/local/bin:
+export PYTHONPATH=${HOME}/local/bin:/usr/local/bin
 
 # Path settings
 export PATH=${HOME}/local/bin:${PATH}:${HOME}/.local/bin

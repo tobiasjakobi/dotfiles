@@ -15,6 +15,8 @@ from os.path import isdir, isfile, islink, join as pjoin
 from os import listdir
 from re import compile as rcompile
 
+from sysfs_helper import read_sysfs, get_parent_device
+
 
 ##########################################################################################
 # Class definitions
@@ -68,70 +70,17 @@ sensor_descs = {
 # Internal functions
 ##########################################################################################
 
-def _read_sysfs(path: str):
-    try:
-        with open(path, mode='r') as f:
-            data = f.read().rstrip()
-
-    except Exception:
-        data = None
-
-    return data
-
-def _is_parent_device(path: str) -> bool:
-    '''
-    Check if a device path belongs to a parent device.
-
-    Arguments:
-        path - the device path to check
-    '''
-
-    if not isfile(pjoin(path, 'class')):
-        return False
-
-    if not isfile(pjoin(path, 'vendor')):
-        return False
-
-    if not isfile(pjoin(path, 'device')):
-        return False
-
-    return True
-
-def _get_parent_device(path: str) -> str:
-    '''
-    Get the parent device path for a device.
-
-    Arguments:
-        path - the device path to use
-    '''
-
-    parent_device = None
-    current_path = path
-
-    while True:
-        if _is_parent_device(current_path):
-            parent_device = current_path
-            break
-
-        next_path = pjoin(current_path, 'device')
-        if not islink(next_path):
-            break
-    
-        current_path = next_path
-
-    return parent_device
-
-def _is_sensor_online(info: SensorDeviceInfo):
-    runtime_status = _read_sysfs(pjoin(info.parent_path, 'power/runtime_status'))
+def _is_sensor_online(info: SensorDeviceInfo) -> bool:
+    runtime_status = read_sysfs(pjoin(info.parent_path, 'power/runtime_status'))
     if runtime_status is None:
         return False
 
     return runtime_status == 'active'
 
-def _is_matching_device(path: str, sdev: SensorDevice):
+def _is_matching_device(path: str, sdev: SensorDevice) -> bool:
     try:
-        device_id = int(_read_sysfs(pjoin(path, 'device')), 16)
-        vendor_id = int(_read_sysfs(pjoin(path, 'vendor')), 16)
+        device_id = int(read_sysfs(pjoin(path, 'device')), 16)
+        vendor_id = int(read_sysfs(pjoin(path, 'vendor')), 16)
 
     except Exception:
         return False
@@ -144,18 +93,18 @@ def _lookup_label(path: str, label: str) -> str:
         if len(res) == 0:
             continue
 
-        sensor_label = _read_sysfs(pjoin(path, arg))
+        sensor_label = read_sysfs(pjoin(path, arg))
         if sensor_label == label:
             return arg
 
     return None
 
 def _identify_sensor(path: str, desc: SensorDescription) -> SensorDeviceInfo:
-    sensor_driver = _read_sysfs(pjoin(path, 'name'))
+    sensor_driver = read_sysfs(pjoin(path, 'name'))
     if sensor_driver != desc.driver:
         return None
 
-    parent_device = _get_parent_device(path)
+    parent_device = get_parent_device(path)
     if not _is_matching_device(parent_device, desc.device):
         return None
 
@@ -182,7 +131,7 @@ def _read_sensor_internal(info: SensorDeviceInfo) -> str:
         info - the sensor device info to use
     '''
 
-    content = _read_sysfs(info.value_path)
+    content = read_sysfs(info.value_path)
 
     if content is None or not content.isdigit():
         return 'Error'
@@ -239,13 +188,18 @@ def read_sensor(info: SensorDeviceInfo) -> str:
 
 def gpu_busy(info: SensorDeviceInfo) -> int:
     '''
-    TODO: desc
+    Read the GPU busy ratio of the sensor's parent device.
+
+    Arguments:
+        info - the sensor device info to use
+
+    Reading the busy ratio is only supported if the parent device is a GPU.
     '''
 
     if not _is_sensor_online(info):
         return None
 
-    gpu_busy_percent = _read_sysfs(pjoin(info.parent_path, 'gpu_busy_percent'))
+    gpu_busy_percent = read_sysfs(pjoin(info.parent_path, 'gpu_busy_percent'))
     if gpu_busy_percent is None:
         return None
 
@@ -256,7 +210,7 @@ def gpu_busy(info: SensorDeviceInfo) -> int:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         return 0
 
@@ -265,8 +219,8 @@ def main(args: list) -> int:
     try:
         desc = sensor_descs[sensor]
 
-    except:
-        print(f'error: unknown sensor requested: {sensor}', file=sys.stderr)
+    except Exception as exc:
+        print(f'error: unknown sensor requested: {sensor}: {exc}', file=sys.stderr)
 
         return 1
 

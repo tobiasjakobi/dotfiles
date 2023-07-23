@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 swaynag --type info --message 'Select CPU performance:' \
         --button-dismiss 'Low (4 cores, no boost)' 'sudo cpufreq_perf.py --set low' \
