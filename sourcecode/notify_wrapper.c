@@ -1,3 +1,7 @@
+/*
+* gcc -lsystemd -O2 -o notify_wrapper notify_wrapper.c
+*/
+
 #include <systemd/sd-login.h>
 #include <unistd.h>
 
@@ -30,7 +34,7 @@ static int exec_notify(uid_t id, const char *summary, const char *body, const ch
             NULL,
         };
 
-        execve(notify_send, (char * const*)notify_argv, (char * const*)notify_envp);
+        return execve(notify_send, (char * const*)notify_argv, (char * const*)notify_envp);
     } else {
         const char *notify_argv[] = {
             notify_send,
@@ -39,7 +43,7 @@ static int exec_notify(uid_t id, const char *summary, const char *body, const ch
             NULL,
         };
 
-        execve(notify_send, (char * const*)notify_argv, (char * const*)notify_envp);
+        return execve(notify_send, (char * const*)notify_argv, (char * const*)notify_envp);
     }
 }
 
@@ -51,10 +55,12 @@ int main(int argc, char *argv[]) {
     unsigned num_sessions;
 
     ret = sd_get_sessions(&sessions);
-    if (ret <= 0) {
+    if (ret < 0) {
         fprintf(stderr, "error: no sessions available: %d\n", ret);
 
         return -1;
+    } else if (ret == 0) {
+      return 0;
     }
 
     num_sessions = ret;

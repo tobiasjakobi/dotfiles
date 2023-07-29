@@ -16,6 +16,8 @@ from os.path import join as pjoin
 from subprocess import run as prun
 from tempfile import TemporaryDirectory
 
+from i3ipc import Connection as I3Connection
+
 
 ##########################################################################################
 # Dataclass definitions
@@ -35,11 +37,11 @@ class OutputInfo:
             input - the JSON dictionary to use
         '''
 
-        mode = input['current_mode']
+        mode = input.get('current_mode')
 
         return OutputInfo(
-            name       = input['name'],
-            resolution = (mode['width'], mode['height'])
+            name       = input.get('name'),
+            resolution = (mode.get('width'), mode.get('height'))
         )
 
 
@@ -54,16 +56,14 @@ def _get_focused_output() -> OutputInfo:
     Returns an OutputInfo object, or None if no focused output was found.
     '''
 
-    p_args = ['/usr/bin/swaymsg', '-r', '-t', 'get_outputs']
-    p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+    conn = I3Connection()
 
-    output = None
-    for o in jloads(p.stdout):
-        if o['focused']:
-            output = OutputInfo.from_json(o)
-            break
+    for output in conn.get_outputs():
+        focused = output.ipc_data.get('focused')
+        if focused is not None and focused:
+            return OutputInfo.from_json(output.ipc_data)
 
-    return output
+    return None
 
 def _bg(file: str, output: OutputInfo):
     if output is None:
@@ -110,7 +110,7 @@ def _makelock(dir: str, outfile: str):
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     tempdir = TemporaryDirectory(prefix='/dev/shm/')
 
     output_file = pjoin(tempdir.name, 'output.png')

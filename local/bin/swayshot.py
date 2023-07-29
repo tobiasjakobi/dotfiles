@@ -9,9 +9,18 @@
 import sys
 
 from datetime import datetime
-from json import loads as jloads
 from os.path import expanduser
 from subprocess import run as prun
+
+from i3ipc import Connection as I3Connection
+
+
+##########################################################################################
+# Constants
+##########################################################################################
+
+_grim = '/usr/bin/grim'
+_slurp = '/usr/bin/slurp'
 
 
 ##########################################################################################
@@ -27,26 +36,24 @@ def _save_path() -> str:
     return expanduser(now.strftime('~/screenshot_%Y-%m-%d-%H%M%S.png'))
 
 def _full_shot(path: str):
-    swaymsg_args = ['/usr/bin/swaymsg', '-r', '-t', 'get_outputs']
-    p = prun(swaymsg_args, check=True, capture_output=True, encoding='utf-8')
+    conn = I3Connection()
 
-    json_data = jloads(p.stdout)
-
-    output = None
-    for o in json_data:
-        if o['focused']:
-            output = o['name']
+    focused_output = None
+    for output in conn.get_outputs():
+        focused = output.ipc_data.get('focused')
+        if focused is not None and focused:
+            focused_output = output.ipc_data.get('name')
             break
 
-    if output is None:
-        grim_args = ['/usr/bin/grim', path]
+    if focused_output is None:
+        grim_args = [_grim, path]
     else:
-        grim_args = ['/usr/bin/grim', '-o', output, path]
+        grim_args = [_grim, '-o', focused_output, path]
 
     prun(grim_args, check=True)
 
 def _select_shot(path: str):
-    slurp_args = ['/usr/bin/slurp']
+    slurp_args = [_slurp]
     p = prun(slurp_args, check=True, capture_output=True, encoding='utf-8')
 
     slurp_out = p.stdout.splitlines()
@@ -55,7 +62,7 @@ def _select_shot(path: str):
 
     area = slurp_out[0].rstrip()
 
-    grim_args = ['/usr/bin/grim', '-g', area, path]
+    grim_args = [_grim, '-g', area, path]
     prun(grim_args)
 
 
@@ -63,7 +70,7 @@ def _select_shot(path: str):
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) != 2:
         _usage(args[0])
         return 0

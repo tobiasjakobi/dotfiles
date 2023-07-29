@@ -8,10 +8,11 @@
 
 import sys
 
-from json import loads as jloads
 from os import environ
 from os.path import exists
 from subprocess import run as prun
+
+from i3ipc import Connection as I3Connection
 
 
 ##########################################################################################
@@ -90,11 +91,13 @@ def _has_active_output(output_name: str) -> bool:
         output_name - name of the video output
     '''
 
-    p_args = ['/usr/bin/swaymsg', '--raw', '--type', 'get_outputs']
-    p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+    conn = I3Connection()
 
-    for output in jloads(p.stdout):
-        if output['name'] == output_name and output['active']:
+    for output in conn.get_outputs():
+        active = output.ipc_data.get('active')
+        name = output.ipc_data.get('name')
+
+        if active is not None and active and output_name == name:
             return True
 
     return False
@@ -104,7 +107,7 @@ def _has_active_output(output_name: str) -> bool:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
 

@@ -78,7 +78,7 @@ class CommandResult:
 # Internal functions
 ##########################################################################################
 
-def _rifle_cmd(args: list) -> int:
+def _rifle_cmd(args: list[str]) -> int:
     '''
     Execute a command and feed the command results into the rifle FIFO.
 
@@ -132,7 +132,7 @@ def _rifle_cmd(args: list) -> int:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
     '''
