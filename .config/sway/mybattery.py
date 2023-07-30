@@ -17,7 +17,7 @@ from sysfs_helper import read_sysfs
 # Constants
 ##########################################################################################
 
-_state_file = '/var/state/acpi_acadapter'
+_state_file = '/run/acpi_acadapter'
 _sysfs_base = '/sys/class/power_supply/BAT0'
 
 

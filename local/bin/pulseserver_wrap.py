@@ -204,7 +204,7 @@ def pulseserver_wrap(args: list[str]) -> int:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
     '''

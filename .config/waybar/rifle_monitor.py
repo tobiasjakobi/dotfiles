@@ -100,7 +100,7 @@ def _handle_res(res: CommandResult) -> bool:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     socket_name = None
 
     if rifle_cmdstat in environ:

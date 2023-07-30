@@ -1,29 +1,69 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from __future__ import annotations
+
 
 ##########################################################################################
 # Imports
 ##########################################################################################
 
+import socket
 import sys
 
-from enum import Enum
-from json import dumps as jdumps
+from dataclasses import dataclass
+from enum import IntEnum, unique
 from html import escape as html_escape
+from json import dumps as jdumps
+from os import environ as os_environ
 from subprocess import CalledProcessError, run as prun
 from time import sleep
+
+
+##########################################################################################
+# Constants
+##########################################################################################
+
+_mpd_default_host = 'localhost'
+_mpd_default_port = 6600
 
 
 ##########################################################################################
 # Enumerator definitions
 ##########################################################################################
 
-class MPDErrorType(Enum):
-    Generic   = 0
-    Empty     = 1
-    Malformed = 2
-    Unknown   = 3
+@unique
+class MPDErrorType(IntEnum):
+    Generic         = 0
+    Empty           = 1
+    Malformed       = 2
+    HostUnavailable = 3
+    Unknown         = 4
+
+    def is_critical(self) -> bool:
+        return self.value not in (MPDErrorType.Empty, MPDErrorType.HostUnavailable)
+
+
+##########################################################################################
+# Dataclass definitions
+##########################################################################################
+
+@dataclass(frozen=True)
+class MPDConfig:
+    host: str
+    port: int
+
+    @staticmethod
+    def read_envion() -> MPDConfig:
+        mpd_host = os_environ.get('MPD_HOST')
+        if mpd_host is None:
+            mpd_host = _mpd_default_host
+
+        mpd_port = os_environ.get('MPD_PORT')
+        if mpd_port is None:
+            mpd_port = _mpd_default_port
+
+        return MPDConfig(mpd_host, mpd_port)
 
 
 ##########################################################################################
@@ -39,7 +79,7 @@ class MPDException(Exception):
 
 
 ##########################################################################################
-# Functions
+# Internal functions
 ##########################################################################################
 
 def _html_escape2(input: str) -> str:
@@ -48,7 +88,53 @@ def _html_escape2(input: str) -> str:
 
     return html_escape(input)
 
-def _callmpc(args: list):
+def _is_host_available(cfg: MPDConfig) -> bool:
+    '''
+    Helper to check if a MPD host is available.
+
+    Arguments:
+        cfg - MPD configuration
+    '''
+
+    try:
+        addr_infos = socket.getaddrinfo(cfg.host, cfg.port, proto=socket.IPPROTO_TCP)
+
+    except socket.gaierror:
+        return False
+
+    sock_addr = None
+
+    for info in addr_infos:
+        if info[0] == socket.AF_INET:
+            sock_addr = info[4]
+            break
+
+    if sock_addr is None:
+        return False
+
+    _s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    _s.settimeout(2.0)
+
+    server_available = False
+
+    try:
+        _s.connect(sock_addr)
+        _s.shutdown(socket.SHUT_RDWR)
+
+        server_available = True
+
+    except TimeoutError:
+        pass
+
+    except Exception as exc:
+        print(f'warn: error while connecting: {exc}', file=sys.stderr)
+
+    finally:
+        _s.close()
+
+    return server_available
+
+def _callmpc(args: list[str]) -> str:
     p_args = ['/usr/bin/mpc'] + args
 
     try:
@@ -73,7 +159,12 @@ def _callmpc(args: list):
 
     return stdout[0].rstrip()
 
-def musicpd_refresh():
+
+##########################################################################################
+# Functions
+##########################################################################################
+
+def musicpd_refresh(cfg: MPDConfig):
     status = {
         'text': None,
         'tooltip': None,
@@ -90,6 +181,9 @@ def musicpd_refresh():
     album = None
 
     try:
+        if not _is_host_available(cfg):
+            raise MPDException(MPDErrorType.HostUnavailable)
+
         artist = _callmpc(artist_args)
 
         try:
@@ -102,17 +196,17 @@ def musicpd_refresh():
     except MPDException as exc:
         etype = exc.get_type()
 
-        if etype != MPDErrorType.Empty:
-            print(f'warn: MPD exception ({etype}) during artist info fetch', file=sys.stderr)
+        if etype.is_critical():
+            print(f'error: critical MPD exception: {etype}', file=sys.stderr)
 
-            '''
-            An MPD exception is most likely due to missing network connectivity to the
-            server, so increase the delay here.
-            '''
-            delay *= 5
+        '''
+        An MPD exception is most likely due to missing network connectivity to the
+        server, so increase the delay here.
+        '''
+        delay *= 5
 
     except Exception as exc:
-        print(f'warn: unexpected exception during artist info fetch: {exc}', file=sys.stderr)
+        print(f'error: unexpected exception during artist info fetch: {exc}', file=sys.stderr)
 
     try:
         if album != None:
@@ -144,9 +238,11 @@ def musicpd_refresh():
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
+    config = MPDConfig.read_envion()
+
     while True:
-        pipe_lost, delay = musicpd_refresh()
+        pipe_lost, delay = musicpd_refresh(config)
 
         if pipe_lost:
             break
