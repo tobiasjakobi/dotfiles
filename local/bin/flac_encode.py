@@ -8,16 +8,15 @@
 
 import sys
 
-from os.path import basename, exists, isdir, isfile, realpath, splitext, join as pjoin
-from os import walk
 from magic import Magic
 from multiprocessing import Pool
+from pathlib import Path
 from shutil import move
 from subprocess import run as prun
 from tempfile import TemporaryDirectory
-from termios import TCSADRAIN, tcgetattr, tcsetattr, error as termios_err
 
 from audio_compare import audio_compare
+from common_util import StandardOutputProtector, path_walk
 
 
 ##########################################################################################
@@ -25,106 +24,82 @@ from audio_compare import audio_compare
 ##########################################################################################
 
 '''
-Distance between seekpoints that are placed in newly encoded FLAC files.
+Distance (in seconds) between seekpoints that are placed in newly encoded FLAC files.
 '''
-_seekpoint_distance = '25s'
-
-
-##########################################################################################
-# Class definitions
-##########################################################################################
-
-class StandardOutputProtector:
-    '''
-    Context manager that protects the standard output from changes.
-    '''
-
-    def __init__(self):
-        self._stdout_fd = sys.stdout.fileno()
-
-        try:
-            self._stdout_attr = tcgetattr(self._stdout_fd)
-
-        except termios_err:
-            self._stdout_attr = None
-
-    def __enter__(self):
-        return None
-
-    def __exit__(self, type, value, traceback):
-        if self._stdout_attr is not None:
-            tcsetattr(self._stdout_fd, TCSADRAIN, self._stdout_attr)
+_seekpoint_distance = 25
 
 
 ##########################################################################################
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
+def _usage(app: str) -> None:
     print(f'Usage: {app} <file or directory item> [<another item>...]', file=sys.stdout)
 
-def _encode(input_path: str, verbose: bool):
+def _encode(path: Path, verbose: bool) -> None:
     '''
     Internal encoding helper.
 
     Arguments:
-        input_path - path to input file
-        verbose    - enable verbose output?
+        path    - path to input file
+        verbose - enable verbose output?
     '''
 
-    input_base, input_ext = splitext(input_path)
-    output = f'{input_base}.flac'
+    path_stem = path.stem
+    output_path = path.parent / Path(f'{path_stem}.flac')
 
-    if exists(output):
-        raise RuntimeError(f'output file already exists: {output}')
+    if output_path.exists():
+        raise RuntimeError(f'output file already exists: {output_path}')
 
     if verbose:
-        print(f'info: processing: {basename(input_path)}', file=sys.stdout)
+        print(f'info: processing: {path.name}', file=sys.stdout)
 
-    with TemporaryDirectory() as d:
-        temp_output = pjoin(d, 'output.flac')
-        reference_output = pjoin(d, 'reference.wav')
+    with TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
 
-        flake_args = ['flake', '-q', '-12', input_path, '-o', temp_output]
+        encoding_output = tmp_path / Path('output.flac')
+        reference_output = tmp_path / Path('reference.wav')
+
+        flake_args = ['flake', '-q', '-12', path.as_posix(), '-o', encoding_output.as_posix()]
         prun(flake_args, check=True, capture_output=True, encoding='utf-8')
 
-        decode_args = ['flac', '--decode', '--silent', f'--output-name={reference_output}', temp_output]
+        decode_args = ['flac', '--decode', '--silent', f'--output-name={reference_output.as_posix()}', encoding_output.as_posix()]
         prun(decode_args, check=True, capture_output=True, encoding='utf-8')
 
-        if not audio_compare(input_path, reference_output):
+        if not audio_compare(path, reference_output):
             raise RuntimeError('mismatch between original source and reference decoding')
 
         '''
         flake doesn't add a seektable by default, so add one here.
         '''
-        seekpoint_args = ['metaflac', f'--add-seekpoint={_seekpoint_distance}', temp_output]
+        seekpoint_args = ['metaflac', f'--add-seekpoint={_seekpoint_distance}s', encoding_output.as_posix()]
         prun(seekpoint_args, check=True, capture_output=True, encoding='utf-8')
 
-        move(temp_output, output)
+        move(encoding_output.as_posix(), output_path.as_posix())
 
 
 ##########################################################################################
 # Functions
 ##########################################################################################
 
-def is_wav(m: Magic, file_path: str) -> bool:
+def is_wav(m: Magic, path: Path) -> bool:
     '''
     Simple helper to check if a file is WAV.
 
     Arguments:
-        m         - magic object to check MIME type
-        file_path - path of the file to check
+        m    - magic object to check MIME type
+        path - path of the file to check
     '''
 
-    if not file_path.endswith('.wav'):
+    if path.suffix != '.wav':
         return False
 
-    if m.from_file(file_path) != 'audio/x-wav':
+    if m.from_file(path.as_posix()) != 'audio/x-wav':
         return False
 
     return True
 
-def is_flac(m: Magic, file_path: str) -> bool:
+def is_flac(m: Magic, path: Path) -> bool:
     '''
     Simple helper to check if a file is FLAC.
 
@@ -133,79 +108,68 @@ def is_flac(m: Magic, file_path: str) -> bool:
         file_path - path of the file to check
     '''
 
-    if not file_path.endswith('.flac'):
+    if path.suffix != '.flac':
         return False
 
-    if m.from_file(file_path) != 'audio/flac':
+    if m.from_file(path.as_posix()) != 'audio/flac':
         return False
 
     return True
 
-def flac_encode(file_path: str, verbose: bool):
+def flac_encode(path: Path, verbose: bool) -> None:
     '''
     Encode a single WAV file to FLAC.
 
     Arguments:
-        file_path - path to file
-        verbose   - enable verbose output?
+        path    - path to file which we want to encode
+        verbose - enable verbose output?
 
     Encoding is done using the flake encoder. After encoding the resulting file is decoded
     with the reference decoder and compared against the original file.
     '''
 
-    if not isfile(file_path):
-        raise RuntimeError('path is not a file')
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
 
     mime = Magic(mime=True)
-    if not is_wav(mime, file_path):
+    if not is_wav(mime, path):
         raise RuntimeError('invalid file content (expected WAV)')
 
     if verbose:
-        print(f'info: encoding file: {file_path}', file=sys.stdout)
+        print(f'info: encoding file: {path}', file=sys.stdout)
 
-    _encode(file_path, False)
+    _encode(path, False)
 
-def flac_encode_dir(directory_path: str, verbose: bool):
+def flac_encode_dir(path: Path, verbose: bool):
     '''
     Encode all WAV files in a directory to FLAC.
 
     Arguments:
-        directory_path - path to directory
-        verbose        - enable verbose output?
+        path    - path of directory which we want to encode
+        verbose - enable verbose output?
     '''
 
-    if not isdir(directory_path):
-        raise RuntimeError('path is not a directory')
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
 
     mime = Magic(mime=True)
 
     if verbose:
-        print(f'info: encoding directory: {directory_path}', file=sys.stdout)
+        print(f'info: encoding directory: {path}', file=sys.stdout)
 
-    directory_files = []
+    pool_args = [(x, True) for x in path_walk(path) if is_wav(mime, x)]
 
-    for dirpath, dirnames, filenames in walk(top=directory_path):
-        for fn in filenames:
-            tmp = pjoin(dirpath, fn)
-
-            if is_wav(mime, tmp):
-                directory_files.append(tmp)
-
-    encoding_args = [(x, True) for x in directory_files]
-
-    with Pool() as p:
-        p.starmap(_encode, encoding_args)
-        p.close()
-        p.join()
-
-    return 0
+    with Pool() as pool:
+        pool.starmap(_encode, pool_args)
+        pool.close()
+        pool.join()
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
         return 0
@@ -214,26 +178,29 @@ def main(args: list) -> int:
 
     with StandardOutputProtector():
         for arg in args[1:]:
-            if not exists(arg):
-                print(f'warn: skipping non-existing argument: {arg}', file=sys.stderr)
+            path = Path(arg)
+
+            if not path.exists():
+                print(f'warn: skipping non-existing path: {path}', file=sys.stderr)
                 continue
 
-            path = realpath(arg)
-
             try:
-                if isdir(path):
+                if path.is_dir():
                     flac_encode_dir(path, True)
-                elif isfile(path):
+                elif path.is_file():
                     flac_encode(path, True)
                 else:
-                    raise RuntimeError('invalid argument type')
+                    raise RuntimeError(f'invalid argument type: {path.stat().st_mode}')
 
             except Exception as exc:
-                print(f'warn: error occured while encoding: {arg}: {exc}', file=sys.stderr)
+                print(f'warn: error occured while encoding: {path}: {exc}', file=sys.stderr)
 
                 encoding_error = True
 
-    return 1 if encoding_error else 0
+    if encoding_error:
+        return 1
+    
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

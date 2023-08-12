@@ -436,7 +436,7 @@ def sfv_migrate(arg) -> int:
 
         return 5
 
-    sha_temp = NamedTemporaryFile(mode='w+', prefix='/dev/shm/', delete=True)
+    sha_temp = NamedTemporaryFile(mode='w+', prefix='/tmp/', delete=True)
 
     retval = sha_scan(working, sha_temp, filelist)
     if retval != 0:
@@ -451,7 +451,7 @@ def sfv_migrate(arg) -> int:
             output.write(sha_temp.read())
 
     except OSError as msg:
-        print(f'error: failed to write the SHA result: {input_file}: {msg}')
+        print(f'error: failed to write the SHA result: {input_file}: {msg}', file=sys.stderr)
 
         return 7
 
@@ -463,7 +463,7 @@ def sfv_migrate(arg) -> int:
             remove(md5_path)
 
     except OSError as msg:
-        print(f'error: failed to rename: {input_file}: {msg}')
+        print(f'error: failed to rename: {input_file}: {msg}', file=sys.stderr)
 
         return 8
 
@@ -474,7 +474,7 @@ def sfv_migrate(arg) -> int:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     getopt_largs = ('help', 'sha-scan', 'sha-check', 'sfv-migrate', 'sfv-check')
 
     try:

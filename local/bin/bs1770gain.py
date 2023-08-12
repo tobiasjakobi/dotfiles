@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from __future__ import annotations
+
 
 ##########################################################################################
 # Imports
@@ -8,15 +10,16 @@
 
 import sys
 
+from argparse import ArgumentParser
 from dataclasses import dataclass
 from magic import Magic
-from os.path import abspath, basename, isdir, isfile, join as pjoin
-from subprocess import run as prun
-from xml.dom.minidom import parseString as xml_parse
+from pathlib import Path
+from subprocess import CalledProcessError, run as prun
+from xml.dom.minidom import Element as XMLElement, parseString as xml_parse
 
-from id3_addtag import is_mp3, addtag as id3_addtag
-from mp4_addtag import addtag as mp4_addtag
-from vc_addtag import addtag as vc_addtag
+from id3_addtag import is_mp3, id3_addtag
+from mp4_addtag import mp4_addtag
+from vc_addtag import TagEntry, vc_addtag
 
 
 ##########################################################################################
@@ -39,136 +42,162 @@ _bs1770_template = [
 ##########################################################################################
 
 @dataclass(frozen=True)
-class _R128Tuple:
+class R128Tuple:
     gain: str
     peak: str
     range: str
 
+    @staticmethod
+    def from_track(track: XMLElement) -> R128Tuple:
+        '''
+        Create a R128 tuple from a track XML element.
+
+        Arguments:
+            track - the track XML element to use
+        '''
+
+        for arg in track.childNodes:
+            if arg.nodeName == 'integrated':
+                _i = arg
+            elif arg.nodeName == 'range':
+                _r = arg
+            elif arg.nodeName == 'true-peak':
+                _t = arg
+
+        try:
+            return R128Tuple(
+                _i.getAttribute('lu'),
+                _t.getAttribute('amplitude'),
+                _r.getAttribute('lra')
+            )
+
+        except NameError:
+            return None
+
 
 ##########################################################################################
-# Internal functions
+# Functions
 ##########################################################################################
 
-def _usage(app: str):
-    print(f'Usage: {app} <directory>', file=sys.stdout)
-    print('bs1770gain wrapper for tagging audio files in a directory.', file=sys.stdout)
+def bs1770gain(path: Path) -> None:
+    '''
+    Perform a bs1770gain scan of the audio files in a given directory.
 
-def _mk_tuple(track) -> _R128Tuple:
-    for arg in track.childNodes:
-        if arg.nodeName == 'integrated':
-            integrated = arg
-        elif arg.nodeName == 'range':
-            range = arg
-        elif arg.nodeName == 'true-peak':
-            truepeak = arg
+    Arguments:
+        path - path to the directory which we should process
+    '''
 
-    return _R128Tuple(
-        gain = integrated.getAttribute('lu'),
-        peak = truepeak.getAttribute('amplitude'),
-        range = range.getAttribute('lra')
-    )
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
 
-
-##########################################################################################
-# Main
-##########################################################################################
-
-def main(args: list) -> int:
     mime = Magic(mime=True)
 
-    if len(args) < 2:
-        print('error: missing directory argument', file=sys.stderr)
-        _usage(args[0])
-
-        return 1
-
-    input = args[1]
-
-    if not isdir(input):
-        print(f'error: directory not found: {input}', file=sys.stderr)
-
-        return 2
-
-    root = abspath(input)
-
-    p_args = _bs1770_template + [root]
+    p_args = _bs1770_template + [path.as_posix()]
 
     try:
         p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
 
+    except CalledProcessError as err:
+        raise RuntimeError('bs1770gain CLI failed: {err}') from err
+
+    try:
         dom_tree = xml_parse(p.stdout)
         for n in dom_tree.childNodes:
             if n.nodeName == 'bs1770gain':
                 main_node = n
 
         for n in main_node.childNodes:
-            if n.nodeName == 'album' and n.getAttribute('folder') == basename(root):
+            if n.nodeName == 'album' and n.getAttribute('folder') == path.name:
                 album_node = n
 
         tracks = album_node.getElementsByTagName('track')
         summary = main_node
 
     except Exception as exc:
-        print(f'error: bs1770gain XML parsing failed: {exc}', file=sys.stderr)
+        raise RuntimeError('bs1770gain XML parsing failed: {exc}') from exc
 
-        return 3
-
-    try:
-        album_info = _mk_tuple(summary)
-
-    except Exception as exc:
-        print(f'error: bs1770gain album summary missing: {exc}', file=sys.stderr)
-
-        return 4
+    album_info = R128Tuple.from_track(summary)
+    if album_info is None:
+        raise RuntimeError('bs1770gain album summary missing')
 
     for track in tracks:
         if not track.hasAttribute('file'):
-            print('warn: skipping track with missing file attribute', file=sys.stderr)
+            print(f'warn: skipping track with missing file attribute: {track}', file=sys.stderr)
 
             continue
 
-        track_info = _mk_tuple(track)
-        filename = track.getAttribute('file')
+        track_info = R128Tuple.from_track(track)
+        if track_info is None:
+            print(f'warn: skipping track with invalid track info: {track}', file=sys.stderr)
 
-        abs_file = pjoin(root, filename)
-
-        if not isfile(abs_file):
-            print(f'warn: skipping non-existing file: {abs_file}', file=sys.stderr)
+            continue
+ 
+        track_path = path / Path(track.getAttribute('file'))
+        if not track_path.is_file():
+            print(f'warn: skipping non-existing file: {track_path.name}', file=sys.stderr)
 
             continue
 
-        file_type = mime.from_file(abs_file)
+        file_type = mime.from_file(track_path.as_posix())
+        if file_type in ('video/mp4', 'audio/x-m4a'):
+            addtag_func = mp4_addtag
+        elif file_type in ('audio/ogg', 'audio/flac'):
+            addtag_func = vc_addtag
+        elif file_type == 'audio/mpeg' or is_mp3(track_path):
+            addtag_func = id3_addtag
+        else:
+            print(f'warn: skipping file with unsupported type: {track_path.name}: {file_type}', file=sys.stderr)
 
-        func_args = [
-            abs_file,
-            '--replaygain_algorithm=EBU R128',
-            '--replaygain_reference_loudness=-23.00 LUFS',
-            f'--replaygain_track_gain={track_info.gain} dB',
-            f'--replaygain_track_peak={track_info.peak}',
-            f'--replaygain_track_range={track_info.range} dB',
-            f'--replaygain_album_gain={album_info.gain} dB',
-            f'--replaygain_album_peak={album_info.peak}',
-            f'--replaygain_album_range={album_info.range} dB',
+            continue
+
+        tag_entries = [
+            TagEntry('replaygain_algorithm', 'EBU R128'),
+            TagEntry('replaygain_reference_loudness', '-23.00 LUFS'),
+            TagEntry('replaygain_track_gain', f'{track_info.gain} dB'),
+            TagEntry('replaygain_track_peak', f'{track_info.peak}'),
+            TagEntry('replaygain_track_range', f'{track_info.range} dB'),
+            TagEntry('replaygain_album_gain', f'{album_info.gain} dB'),
+            TagEntry('replaygain_album_peak', f'{album_info.peak}'),
+            TagEntry('replaygain_album_range', f'{album_info.range} dB'),
         ]
 
-        if file_type in ('video/mp4', 'audio/x-m4a'):
-            func = mp4_addtag
-        elif file_type in ('audio/ogg', 'audio/flac'):
-            func = vc_addtag
-        elif file_type == 'audio/mpeg':
-            func = id3_addtag
-        elif is_mp3(abs_file):
-            func = id3_addtag
-        else:
-            print(f'warn: skipping file with unsupported type: {abs_file}: {file_type}', file=sys.stderr)
+        try:
+            addtag_func(track_path, tag_entries)
+
+        except Exception as exc:
+            print(f'error: failed to write tags: {track_path.name}: {exc}', file=sys.stderr)
 
             continue
 
-        ret = func(func_args)
-        if ret != 0:
-            print(f'error: failed to write tags: {abs_file}: {ret}', file=sys.stderr)
 
-            continue
+##########################################################################################
+# Main
+##########################################################################################
+
+def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
+
+    parser = ArgumentParser(description='bs1770gain wrapper for scanning and tagging audio files in a directory.')
+
+    parser.add_argument('-d', '--directory', required=True, help='Directory where we want to scan')
+
+    parsed_args = parser.parse_args()
+
+    if parsed_args.directory is not None:
+        work_dir = Path(parsed_args.directory)
+
+        try:
+            bs1770gain(work_dir)
+
+        except Exception as exc:
+            print(f'error: failed to perform bs1770gain scan: {work_dir.name}: {exc}', file=sys.stderr)
+
+            return 1
 
     return 0
 

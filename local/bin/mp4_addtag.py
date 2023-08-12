@@ -8,14 +8,14 @@
 
 import sys
 
+from argparse import ArgumentParser
 from magic import Magic
-from os.path import exists
+from pathlib import Path
 from typing import Any
 
-from mutagen.mp4 import MP4, MP4FreeForm, AtomDataType as MP4Atom
+from mutagen.mp4 import MP4, MP4FreeForm, MP4Tags, AtomDataType as MP4Atom
 
-from id3_addtag import valid_tags
-from vc_addtag import InternalTag, handle_arg
+from vc_addtag import TagEntry
 
 
 ##########################################################################################
@@ -49,15 +49,12 @@ _unprintable_tags = [
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
-    print(f'Usage: {app} <filename> [--tag1name=tag1content] [--tag2name=tag2content] ...', file=sys.stdout)
-
-def _is_valid_canonical(c: str) -> bool:
+def _is_valid_canonical(entry: TagEntry) -> bool:
     '''
     Test if the canonical name is valid (for adding/removal).
     '''
 
-    return c in valid_tags
+    return entry.is_replaygain()
 
 def _is_printable(tag_key: str) -> bool:
     '''
@@ -95,24 +92,25 @@ def _key_to_canonical(tag_key: str) -> str:
 
     return can
 
-def _remove_tag_canonical(tags, canonical):
+def _remove_tag_canonical(tags: MP4Tags, entry: TagEntry) -> None:
     '''
     Remove a tag via its canonical name.
     '''
 
-    raise RuntimeError('TODO: not implemented')
+    real_key = f'----:com.apple.iTunes:{entry.key}'
+    if real_key in tags:
+        del tags[real_key]
 
-def _add_tag_canonical(tags, canonical: str, content: str):
+def _add_tag_canonical(tags: MP4Tags, entry: TagEntry) -> None:
     '''
     Add a tag via its canonical name.
 
     TODO/FIXME: currently only freeform tags are supported
     '''
 
-    tag_key = f'----:com.apple.iTunes:{canonical}'
-    tag_value = MP4FreeForm(content.encode('utf-8'), dataformat=MP4Atom.UTF8)
+    real_key = f'----:com.apple.iTunes:{entry.key}'
 
-    tags[tag_key] = tag_value
+    tags[real_key] = MP4FreeForm(entry.value.encode('utf-8'), dataformat=MP4Atom.UTF8)
 
 def _freeform_to_string(ff: MP4FreeForm) -> str:
     '''
@@ -179,97 +177,88 @@ def _value_to_string(tag_key: str, tag_value: Any) -> str:
 # Functions
 ##########################################################################################
 
-def addtag(args: list) -> int:
+def mp4_addtag(path: Path, entries: list[TagEntry]) -> None:
+    '''
+    Add a list of tag entries as MP4.
+
+    Arguments:
+        path    - path to the file which we add the tags to
+        entries - list of tag entries that we use
+    '''
+
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
+
     mime = Magic(mime=True)
 
-    input = args[0]
-    tag_args = args[1:]
 
-    if not exists(input):
-        print(f'error: input file not found: {input}', file=sys.stderr)
-
-        return 1
-
-    input_type = mime.from_file(input)
-
+    input_type = mime.from_file(path.as_posix())
     if input_type not in ('video/mp4', 'audio/x-m4a'):
-        print(f'error: input file has unsupported type: {input}: {input_type}', file=sys.stderr)
+        raise RuntimeError(f'input file has unsupported type: {input_type}')
 
-        return 2
+    audio_file = MP4(path.as_posix())
 
-    try:
-        new_tags = [handle_arg(x) for x in tag_args]
-
-    except Exception as exc:
-        print(f'error: invalid tag argument: {exc}', file=sys.stderr)
-
-        return 3
-
-    try:
-        audio = MP4(input)
-
-    except Exception as exc:
-        print(f'error: opening file failed: {exc}', file=sys.stderr)
-
-        return 4
-
-    if not new_tags:
-        if not audio.tags:
-            print(f'info: no tags found: {input}', file=sys.stdout)
-
-            return 0
-
-        print(f'info: printing all tags of: {input}', file=sys.stdout)
-
-        for key, value in audio.tags.items():
-            canonical = _key_to_canonical(key)
-            content = _value_to_string(key, value)
-
-            if content is None:
-                print(f'warn: skipping tag with key: {key}', file=sys.stderr)
-
-                continue
-
-            print(f'{canonical} = {content}', file=sys.stdout)
-
-        return 0
-
-    for arg in new_tags:
-        if not _is_valid_canonical(arg.key):
-            print(f'warn: skipping invalid tag: {arg.key}', file=sys.stderr)
-
-            continue
-
-        if len(arg.value) == 0:
-            _remove_tag_canonical(audio.tags, arg.key)
+    if entries is None or len(entries) == 0:
+        if not audio_file.tags:
+            print(f'info: no tags found: {path}', file=sys.stdout)
         else:
-            _add_tag_canonical(audio.tags, arg.key, arg.value)
+            print(f'info: printing all tags: {path}', file=sys.stdout)
 
-    try:
-        audio.save()
+            for key, value in audio_file.tags.items():
+                content = _value_to_string(key, value)
 
-    except Exception as exc:
-        print(f'error: saving new tags failed: {exc}', file=sys.stderr)
+                if content is None:
+                    print(f'warn: skipping tag with key: {key}', file=sys.stderr)
+                else:
+                    print(f'{_key_to_canonical(key)} = {content}', file=sys.stdout)
 
-        return 5
+    else:
+        for entry in entries:
+            if not _is_valid_canonical(entry):
+                print(f'warn: skipping invalid entry: {entry}', file=sys.stderr)
+            elif entry.is_empty():
+                _remove_tag_canonical(audio_file.tags, entry)
+            else:
+                _add_tag_canonical(audio_file.tags, entry)
 
-    return 0
+        audio_file.save()
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
-    if len(args) < 2:
-        print('error: missing filename argument', file=sys.stderr)
-        _usage(args[0])
+def main(args: list[str]) -> int:
+    parser = ArgumentParser(description='Add MP4 tags to a file.')
 
-        return 1
+    parser.add_argument('-f', '--file', help='Path to file which we want to edit', required=True)
+    parser.add_argument('-t', '--tag', action='append', help='A tag key/value pair on the format key:value')
 
-    ret = addtag(args[1:])
+    parsed_args = parser.parse_args()
 
-    return ret
+    if parsed_args.file is not None:
+        file = Path(parsed_args.file)
+
+        tags = None
+
+        try:
+            if parsed_args.tag is not None:
+                tags = [TagEntry.from_arg(x) for x in parsed_args.tag]
+
+        except Exception as exc:
+            print(f'error: invalid tag argument given: {file}: {exc}', file=sys.stderr)
+
+            return 1
+
+        try:
+            mp4_addtag(file, tags)
+
+        except Exception as exc:
+            print(f'error: failed to add MP4 tags: {file}: {exc}', file=sys.stderr)
+
+            return 2
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

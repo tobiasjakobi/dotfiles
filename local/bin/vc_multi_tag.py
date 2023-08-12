@@ -13,12 +13,12 @@ a list of FLAC files (VorbisComment).
 
 import sys
 
-from os.path import isdir, splitext, join as pjoin
-from os import getcwd, listdir
+from argparse import ArgumentParser
+from pathlib import Path
 from subprocess import run as prun
 from tempfile import TemporaryDirectory
 
-from vc_addtag import addtag
+from vc_addtag import TagEntry, vc_addtag
 
 
 ##########################################################################################
@@ -29,87 +29,82 @@ _editor = '/usr/bin/featherpad'
 
 
 ##########################################################################################
-# Internal functions
-##########################################################################################
-
-def _usage(app: str):
-    print(f'Usage: {app} [directory] <tag argument>', file=sys.stdout)
-
-
-##########################################################################################
 # Functions
 ##########################################################################################
 
-def multi_tag(dir_name: str, tag: str) -> int:
-    if not isdir(dir_name):
-        print(f'error: directory not found: {dir_name}', file=sys.stderr)
+def vc_multi_tag(path: Path, tag_key: str) -> int:
+    '''
+    Apply multiple tag values to FLAC files in a given directory.
 
-        return 1
+    Arguments:
+        path    - path to the directory which we should process
+        tag_key - key of the tag
 
-    if tag.find('=') != -1:
-        print(f'error: invalid tag name: {tag}', file=sys.stderr)
+    This open an editor where the user can enter tag values. Each line
+    is a single tag value. After the editor is closed, the values
+    (v_1, ..., v_N) are collected and applied to the files in the
+    directory.
 
-        return 2
+    I.e. the tag (tag_key, v_i) is applied to the file f_i.
+    '''
 
-    filelist = []
-    for file in listdir(dir_name):
-        splitfile = splitext(file)
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
 
-        if len(splitfile) >= 2 and splitfile[1] == '.flac':
-            filelist.append(pjoin(dir_name, file))
+    if tag_key is None or len(tag_key) == 0:
+        raise RuntimeError(f'invalid tag key: {tag_key}')
 
-    filelist.sort()
+    candidates = list(path.glob('*.flac'))
 
-    tempdir = TemporaryDirectory(prefix='/dev/shm/')
+    with TemporaryDirectory(prefix='/tmp/') as tmp:
+        input_path = Path(tmp) / Path('input.txt')
 
-    input_name = pjoin(tempdir.name, 'input.txt')
-    prun([_editor, '--standalone', input_name], check=True)
+        prun([_editor, '--standalone', input_path.as_posix()], check=True)
 
-    with open(input_name, encoding='utf-8') as f:
-        taglist = f.read().splitlines()
+        tag_values = input_path.read_text(encoding='utf-8').splitlines()
 
-    tempdir.cleanup()
+    if len(candidates) != len(tag_values):
+        raise RuntimeError(f'list size mismatch: {len(candidates)}: {len(tag_values)}')
 
-    if len(filelist) != len(taglist):
-        print('error: size of filelist not matching size of taglist', file=sys.stderr)
-        print(f'\tfilelist = {len(filelist)}, taglist = {len(taglist)}', file=sys.stderr)
-
-        return 3
-
-    for file, entry in zip(filelist, taglist):
-        vc_args = [file, f'--{tag}={entry}']
-
-        addtag(vc_args)
-
-    return 0
+    [vc_addtag(cand, [TagEntry(tag_key, val)]) for cand, val in zip(sorted(candidates), tag_values)]
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
     '''
 
-    if len(args) < 2:
-        print('error: missing tag argument', file=sys.stderr)
-        _usage(args[0])
+    parser = ArgumentParser(description='Copy VorbisComment and picture metadata.')
+
+    parser.add_argument('-d', '--directory', help='Directory where tags should be applied')
+    parser.add_argument('-t', '--tag-key', help='Key of the tag', required=True)
+
+    parsed_args = parser.parse_args()
+
+    if parsed_args.tag_key is not None:
+        if parsed_args.directory is None:
+            work_dir = Path.cwd()
+
+            print(f'info: using current directory: {work_dir.name}', file=sys.stdout)
+        else:
+            work_dir = Path(parsed_args.directory)
+
+    try:
+        vc_multi_tag(work_dir, parsed_args.tag_key)
+
+    except Exception as exc:
+        print(f'error: failed to multi tag: {work_dir.name}: {exc}', file=sys.stderr)
 
         return 1
 
-    if len(args) > 2:
-        work_dir, tagarg = args[1:3]
-    else:
-        work_dir = getcwd()
-        tagarg = args[1]
-
-        print(f'info: using current directory: {work_dir}', file=sys.stdout)
-
-    ret = multi_tag(work_dir, tagarg)
-
-    return ret
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

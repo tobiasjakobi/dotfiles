@@ -8,8 +8,9 @@
 
 import sys
 
-from os.path import basename, dirname, exists, isdir, join as pjoin
-from os import rename, walk
+from pathlib import Path
+
+from common_util import path_walk
 
 
 ##########################################################################################
@@ -52,7 +53,7 @@ def sanitize_vfat(name: str) -> str:
 
     return name
 
-def rename_vfat(file_path: str):
+def rename_vfat(path: Path) -> None:
     '''
     Rename a file so it becomes suitable for a VFAT filesystem.
 
@@ -60,24 +61,25 @@ def rename_vfat(file_path: str):
         file_path - path to file which should be renamed
     '''
 
-    base_original = basename(file_path)
-    dir_original = dirname(file_path)
-    base_sanitized = sanitize_vfat(base_original)
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
 
-    if base_original == base_sanitized:
+    name_original = path.name
+
+    name_sanitized = sanitize_vfat(name_original)
+    if name_original == name_sanitized:
         return
 
-    sanitized_path = pjoin(dir_original, base_sanitized)
-
-    if exists(sanitized_path):
-        print(f'warn: sanitized version exists: {base_original}', file=sys.stdout)
+    sanitized_path = path.parent / Path(name_sanitized)
+    if sanitized_path.exists():
+        print(f'warn: sanitized version exists: {name_original}', file=sys.stdout)
         return
 
-    print(f'info: sanitizing: {base_original} -> {base_sanitized}')
+    print(f'info: sanitizing: {name_original} -> {name_sanitized}')
 
-    rename(file_path, sanitized_path)
+    path.rename(sanitized_path)
 
-def rename_vfat_dir(directory_path: str):
+def rename_vfat_dir(path: Path) -> None:
     '''
     Rename the file contents of a directory, so that they
     become suitable for a VFAT filesystem.
@@ -86,19 +88,17 @@ def rename_vfat_dir(directory_path: str):
         directory_path - path to directory which should be processed
     '''
 
-    if not isdir(directory_path):
-        raise RuntimeError('path is not a directory')
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
 
-    for dirpath, dirnames, filenames in walk(top=directory_path):
-        for fn in filenames:
-            rename_vfat(pjoin(dirpath, fn))
+    list(map(rename_vfat, path_walk(path)))
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
         return 0
@@ -106,15 +106,22 @@ def main(args: list) -> int:
     rename_error = False
 
     for arg in args[1:]:
+        path = Path(arg)
+
         try:
-            rename_vfat_dir(arg)
+            rename_vfat_dir(path)
 
         except Exception as exc:
-            print(f'warn: error occured while renaming: {arg}: {exc}', file=sys.stderr)
+            print(type(exc))
+
+            print(f'warn: error occured while renaming: {path}: {exc}', file=sys.stderr)
 
             rename_error = True
 
-    return 1 if rename_error else 0
+    if rename_error:
+        return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

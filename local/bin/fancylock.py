@@ -111,7 +111,7 @@ def _makelock(dir: str, outfile: str):
 ##########################################################################################
 
 def main(args: list[str]) -> int:
-    tempdir = TemporaryDirectory(prefix='/dev/shm/')
+    tempdir = TemporaryDirectory(prefix='/tmp/')
 
     output_file = pjoin(tempdir.name, 'output.png')
 

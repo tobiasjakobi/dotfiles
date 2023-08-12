@@ -40,6 +40,7 @@ _vout_switcher = {
 
 _extra_switcher = {
     'bigcache': ['custom.bigcache'],
+    'english': ['custom.lang_en'],
 }
 
 '''
@@ -67,7 +68,10 @@ External environment variables used:
   mpv_vout   : hdmi (output on external HDMI)
                dp (output on external DisplayPort)
   mpv_extra  : bigcache (use bigger cache)
-  mpv_custom : string is passed unmodified to the mpv options'''
+               english (use English audio+subs)
+  mpv_custom : string is passed unmodified to the mpv options
+
+  Separator for envvar options is the colon.'''
 
     print(msg, file=sys.stdout)
 
@@ -133,32 +137,36 @@ def main(args: list[str]) -> int:
     mpv_custom = _fetch_env('mpv_custom')
 
     if mpv_sound is not None and len(mpv_sound) != 0:
-        p = _sound_switcher.get(mpv_sound, None)
-        if p is None:
-            print(f'warn: unknown sound option: {mpv_sound}', file=sys.stderr)
-        else:
-            profiles.extend(p)
+        for arg in mpv_sound.split(':'):
+            p = _sound_switcher.get(arg)
+            if p is None:
+                print(f'warn: unknown sound option: {arg}', file=sys.stderr)
+            else:
+                profiles.extend(p)
 
     if mpv_decode is not None and len(mpv_decode) != 0:
-        p = _decode_switcher.get(mpv_decode, None)
-        if p is None:
-            print(f'warn: unknown decode option: {mpv_decode}', file=sys.stderr)
-        else:
-            profiles.extend(p)
+        for arg in mpv_decode.split(':'):
+            p = _decode_switcher.get(arg)
+            if p is None:
+                print(f'warn: unknown decode option: {arg}', file=sys.stderr)
+            else:
+                profiles.extend(p)
 
     if mpv_vout is not None and len(mpv_vout) != 0:
-        p = _vout_switcher.get(mpv_vout, None)
-        if p is None:
-            print(f'warn: unknown vout option: {mpv_vout}', file=sys.stderr)
-        else:
-            profiles.extend(p)
+        for arg in mpv_vout.split(':'):
+            p = _vout_switcher.get(arg)
+            if p is None:
+                print(f'warn: unknown vout option: {arg}', file=sys.stderr)
+            else:
+                profiles.extend(p)
 
     if mpv_extra is not None and len(mpv_extra) != 0:
-        p = _extra_switcher.get(mpv_extra, None)
-        if p is None:
-            print(f'warn: unknown extra option: {mpv_extra}', file=sys.stderr)
-        else:
-            profiles.extend(p)
+        for arg in mpv_extra.split(':'):
+            p = _extra_switcher.get(arg)
+            if p is None:
+                print(f'warn: unknown extra option: {arg}', file=sys.stderr)
+            else:
+                profiles.extend(p)
 
     if _has_active_output(_external_output):
         print(f'info: using {_external_output} as preferred output')

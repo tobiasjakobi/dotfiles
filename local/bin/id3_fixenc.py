@@ -9,71 +9,69 @@
 import sys
 
 from argparse import ArgumentParser
-from os.path import exists
+from pathlib import Path
 
-from eyed3 import core as eyeD3, id3 as ID3
+from eyed3.core import load as id3_load
+from eyed3.id3 import ID3_V2_4
 
 
 ##########################################################################################
 # Internal functions
 ##########################################################################################
 
-def _recode(input: str, src_enc: str) -> str:
-    return input.encode('latin1').decode(src_enc)
-
-def _print_tag(tag: str, name: str, src_enc: str):
-    if not tag:
+def _print_tag(tag: str, name: str, src_encoding: str) -> None:
+    if tag is None or not tag:
         return
 
-    rtag = _recode(tag, src_enc)
+    fixed_tag = tag.encode('latin1').decode(src_encoding)
 
-    print(f'{name}: {rtag}', file=sys.stdout)
+    print(f'{name}: {fixed_tag}', file=sys.stdout)
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     parser = ArgumentParser(description='Helper to fix tag encoding issues.')
 
-    parser.add_argument('-e', '--enc', type=str, help='encoding', required=True)
-    parser.add_argument('-s', '--src', type=str, help='source filename', required=True)
+    parser.add_argument('-e', '--encoding', type=str, help='Soucrce character encoding', required=True)
+    parser.add_argument('-f', '--file', type=str, help='Input file', required=True)
 
-    args = parser.parse_args()
+    parsed_args = parser.parse_args()
 
-    enc = args.enc
-    src = args.src
+    encoding = parsed_args.encoding
+    file = Path(parsed_args.file)
 
-    if not exists(src):
-        print(f'error: source file not found: {src}', file=sys.stderr)
+    if not file.is_file():
+        print(f'error: input file not found: {file}', file=sys.stderr)
 
         return 1
 
     try:
-        audio = eyeD3.load(path=src, tag_version=ID3.ID3_V2_4)
+        audio = id3_load(path=file.as_posix(), tag_version=ID3_V2_4)
 
     except Exception as exc:
-        print(f'error: failed to open source: {exc}', file=sys.stderr)
+        print(f'error: failed to open input: {exc}', file=sys.stderr)
 
         return 2
 
     if not audio:
-        print(f'error: source is not of type MP3: {src}', file=sys.stderr)
+        print(f'error: input does not contain ID3v2: {file}', file=sys.stderr)
 
         return 3
 
     t = audio.tag
 
     if not t:
-        print(f'info: no tags found in source: {src}', file=sys.stdout)
+        print(f'info: no tags found in input: {file}', file=sys.stdout)
 
         return 0
 
-    _print_tag(t.title, 'title', enc)
-    _print_tag(t.album, 'album', enc)
-    _print_tag(t.artist, 'artist', enc)
-    _print_tag(t.album_artist, 'album artist', enc)
+    _print_tag(t.title, 'title', encoding)
+    _print_tag(t.album, 'album', encoding)
+    _print_tag(t.artist, 'artist', encoding)
+    _print_tag(t.album_artist, 'album artist', encoding)
 
     return 0
 

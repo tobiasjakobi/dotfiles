@@ -143,7 +143,7 @@ def single_tag(dir_name: str, tag: str) -> int:
 
         return 2
 
-    tempdir = TemporaryDirectory(prefix='/dev/shm/')
+    tempdir = TemporaryDirectory(prefix='/tmp/')
 
     input_name = pjoin(tempdir.name, 'input.txt')
     prun([_editor, '--standalone', input_name], check=True)

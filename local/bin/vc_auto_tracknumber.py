@@ -8,10 +8,9 @@
 
 import sys
 
-from os.path import isdir, splitext, join as pjoin
-from os import getcwd, listdir
+from pathlib import Path
 
-from vc_addtag import addtag
+from vc_addtag import TagEntry, vc_addtag
 
 
 ##########################################################################################
@@ -42,56 +41,60 @@ def _pad_tracknumber(i: int, t: int) -> str:
 
     return padding * '0' + str(i)
 
-def _auto_tracknumber(dir_name: str) -> int:
-    if not isdir(dir_name):
-        print(f'error: directory not found: {dir_name}', file=sys.stderr)
 
-        return 1
+##########################################################################################
+# Functions
+##########################################################################################
 
-    filelist = []
-    for file in listdir(dir_name):
-        splitfile = splitext(file)
+def vc_auto_tracknumber(path: Path) -> None:
+    '''
+    Auto tracknumber FLAC files in a given directory.
 
-        if len(splitfile) >= 2 and splitfile[1] == '.flac':
-            filelist.append(pjoin(dir_name, file))
+    Arguments:
+        path - path to the directory which we should process
+    '''
 
-    filelist.sort()
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
 
-    tracktotal = len(filelist)
+    candidates = list(path.glob('*.flac'))
 
-    index = 1
-    for file in filelist:
-        vc_args = [
-            file,
-            f'--tracknumber={_pad_tracknumber(index, tracktotal)}',
-            f'--tracktotal={tracktotal}'
-        ]
+    tracktotal = len(candidates)
+    tracknumbers = [_pad_tracknumber(x, tracktotal) for x in range(1, 1 + tracktotal)]
 
-        addtag(vc_args)
-        index += 1
+    tt_tag = TagEntry('tracktotal', str(tracktotal))
 
-    return 0
+    [vc_addtag(cand, [TagEntry('tracknumber', tn), tt_tag]) for cand, tn in zip(sorted(candidates), tracknumbers)]
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
     '''
 
     if len(args) < 2:
-        work_dir = getcwd()
+        work_dir = Path.cwd()
 
-        print(f'info: using current directory: {work_dir}', file=sys.stdout)
+        print(f'info: using current directory: {work_dir.name}', file=sys.stdout)
     else:
-        work_dir = args[1]
+        work_dir = Path(args[1])
 
-    ret = _auto_tracknumber(work_dir)
+    try:
+        vc_auto_tracknumber(work_dir)
 
-    return ret
+    except Exception as exc:
+        print(f'error: failed to auto tracknumber: {work_dir.name}: {exc}', file=sys.stderr)
+
+        return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

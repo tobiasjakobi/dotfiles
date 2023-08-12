@@ -8,134 +8,113 @@
 
 import sys
 
-from os.path import exists
+from argparse import ArgumentParser
+from pathlib import Path
 
-from eyed3.core import load as eload
+from eyed3.core import load as id3_load
 from eyed3.id3 import ID3_V2_4
 from eyed3.mp3 import MIME_TYPES, Mp3AudioFile
 from eyed3.utils import guessMimetype
 
-from vc_addtag import InternalTag, handle_arg
-
-
-##########################################################################################
-# Constants
-##########################################################################################
-
-valid_tags = [
-    'replaygain_algorithm',
-    'replaygain_reference_loudness',
-    'replaygain_track_gain',
-    'replaygain_track_peak',
-    'replaygain_track_range',
-    'replaygain_album_gain',
-    'replaygain_album_peak',
-    'replaygain_album_range',
-]
-
-
-##########################################################################################
-# Internal functions
-##########################################################################################
-
-def _usage(app: str):
-    print(f'Usage: {app} <filename> [--tag1name=tag1content] [--tag2name=tag2content] ...', file=sys.stdout)
-
-def _is_valid_tag(t: InternalTag) -> bool:
-    return t.key in valid_tags
+from vc_addtag import TagEntry
 
 
 ##########################################################################################
 # Functions
 ##########################################################################################
 
-def is_mp3(path: str) -> bool:
+def is_mp3(path: Path) -> bool:
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
+
     mimetype = guessMimetype(path)
 
     if mimetype == 'application/octet-stream':
-        object = eload(path)
+        object = id3_load(path)
         return isinstance(object, Mp3AudioFile)
-    else:
-        return mimetype in MIME_TYPES
 
-def addtag(args: list) -> int:
-    input = args[0]
-    tag_args = args[1:]
+    return mimetype in MIME_TYPES
 
-    if not exists(input):
-        print(f'error: input not found: {input}', file=sys.stderr)
+def id3_addtag(path: Path, entries: list[TagEntry]) -> None:
+    '''
+    Add a list of tag entries as ID3v2.
 
-        return 1
+    Arguments:
+        path    - path to the file which we add the tags to
+        entries - list of tag entries that we use
+    '''
 
-    try:
-        new_tags = [handle_arg(x) for x in tag_args]
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
 
-    except Exception as exc:
-        print(f'error: invalid tag argument: {exc}', file=sys.stderr)
+    audio_file = id3_load(path.as_posix(), tag_version=ID3_V2_4)
 
-        return 2
+    if not audio_file:
+        raise RuntimeError(f'file is not of type MP3: {path}')
 
-    try:
-        audio = eload(path=input, tag_version=ID3_V2_4)
-
-    except Exception as exc:
-        print(f'error: opening file failed: {input}: {exc}', file=sys.stderr)
-
-        return 3
-
-    if not audio:
-        print(f'error: file is not of type MP3: {input}', file=sys.stderr)
-
-        return 4
-
-    if len(new_tags) == 0:
-        if not audio.tags:
-            print(f'info: no tags found: {input}', file=sys.stdout)
-
-            return 0
-
-        print(f'info: printing all user text frames of: {input}', file=sys.stdout)
-        for arg in audio.tag.user_text_frames:
-            print(f'{arg.description} = {arg.text}', file=sys.stdout)
-
-        return 0
-
-    if not audio.tag:
-        audio.initTag()
-
-    t = audio.tag
-
-    for arg in new_tags:
-        if _is_valid_tag(arg):
-            t.user_text_frames.set(text=arg.value, description=arg.key)
+    if entries is None or len(entries) == 0:
+        if not audio_file.tags:
+            print(f'info: no tags found: {path}', file=sys.stdout)
         else:
-            print(f'warn: skipping invalid tag: {arg.key}', file=sys.stderr)
+            print(f'info: printing all user text frames: {path}', file=sys.stdout)
+            for arg in audio_file.tag.user_text_frames:
+                print(f'{arg.description} = {arg.text}', file=sys.stdout)
 
-    try:
-        t.save(version=ID3_V2_4)
+    else:
+        if not audio_file.tag:
+            audio_file.initTag()
 
-    except Exception as exc:
-        print(f'error: failed to save new tags: {exc}', file=sys.stderr)
+        for entry in entries:
+            if entry.is_replaygain():
+                audio_file.tag.user_text_frames.set(description=entry.key, text=entry.value)
+            else:
+                print(f'warn: skipping invalid tag: {entry.key}', file=sys.stderr)
 
-        return 5
-
-    return 0
+        audio_file.tag.save(version=ID3_V2_4)
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
-    if len(args) < 2:
-        print('error: missing filename argument', file=sys.stderr)
-        _usage(args[0])
+def main(args: list[str]) -> int:
+    '''
+    Main function.
 
-        return 1
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
 
-    ret = addtag(args[1:])
+    parser = ArgumentParser(description='Add IDv2 tags to a file.')
 
-    return ret
+    parser.add_argument('-f', '--file', help='Path to file which we want to edit', required=True)
+    parser.add_argument('-t', '--tag', action='append', help='A tag key/value pair on the format key:value')
+
+    parsed_args = parser.parse_args()
+
+    if parsed_args.file is not None:
+        file = Path(parsed_args.file)
+
+        tags = None
+
+        try:
+            if parsed_args.tag is not None:
+                tags = [TagEntry.from_arg(x) for x in parsed_args.tag]
+
+        except Exception as exc:
+            print(f'error: invalid tag argument given: {file}: {exc}', file=sys.stderr)
+
+            return 1
+
+        try:
+            id3_addtag(file, tags)
+
+        except Exception as exc:
+            print(f'error: failed to add ID3v2 tags: {file}: {exc}', file=sys.stderr)
+
+            return 2
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

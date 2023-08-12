@@ -10,7 +10,7 @@ import sys
 
 from argparse import ArgumentParser
 from magic import Magic
-from os.path import exists
+from pathlib import Path
 
 from mutagen.flac import FLAC
 
@@ -19,7 +19,7 @@ from mutagen.flac import FLAC
 # Functions
 ##########################################################################################
 
-def vc_copytags(src_path: str, dst_path: str):
+def vc_copytags(src_path: Path, dst_path: Path):
     '''
     Copy VorbisComment tags from one file to another.
 
@@ -28,15 +28,15 @@ def vc_copytags(src_path: str, dst_path: str):
         dst_path - path to the destination file
     '''
 
-    if not exists(src_path):
-        raise RuntimeError(f'source file not found: {src_path}')
+    if not src_path.is_file():
+        raise RuntimeError(f'source path not found: {src_path}')
 
-    if not exists(dst_path):
-        raise RuntimeError(f'destination file not found: {dst_path}')
+    if not dst_path.is_file():
+        raise RuntimeError(f'destination path not found: {dst_path}')
 
     mime = Magic(mime=True)
-    src_type = mime.from_file(src_path)
-    dst_type = mime.from_file(dst_path)
+    src_type = mime.from_file(src_path.as_posix())
+    dst_type = mime.from_file(dst_path.as_posix())
 
     if src_type != 'audio/flac':
         raise RuntimeError(f'source has unsupported type: {src_type}')
@@ -48,8 +48,8 @@ def vc_copytags(src_path: str, dst_path: str):
         '''
         Mutagen does not provide context management.
         '''
-        s = FLAC(src_path)
-        d = FLAC(dst_path)
+        s = FLAC(src_path.as_posix())
+        d = FLAC(dst_path.as_posix())
 
         if s.tags:
             d.tags += s.tags
@@ -67,23 +67,26 @@ def vc_copytags(src_path: str, dst_path: str):
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
     '''
 
     parser = ArgumentParser(description='Copy VorbisComment and picture metadata.')
 
-    parser.add_argument('-s', '--src', type=str, help='source filename', required=True)
-    parser.add_argument('-d', '--dst', type=str, help='destination filename', required=True)
+    parser.add_argument('-s', '--source', help='Source path', required=True)
+    parser.add_argument('-d', '--destination', help='Destination path', required=True)
 
-    args = parser.parse_args()
+    parsed_args = parser.parse_args()
 
     try:
-        vc_copytags(args.src, args.dst)
+        source = Path(parsed_args.source)
+        destination = Path(parsed_args.destination)
+
+        vc_copytags(source, destination)
 
     except Exception as exc:
-        print(f'error: failed to copy VorbisComment tags: {exc}', file=sys.stderr)
+        print(f'error: failed to copy VorbisComment tags: {source}: {exc}', file=sys.stderr)
 
         return 1
 

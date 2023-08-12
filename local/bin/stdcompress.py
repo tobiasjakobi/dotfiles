@@ -19,7 +19,7 @@ from time import sleep
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
+def _usage(app: str) -> None:
     print(f'Usage: {app} <source application> <logfile base>', file=sys.stdout)
 
 def _sigterm_handler(_signo, _stack_frame):
@@ -33,7 +33,7 @@ def _sigterm_handler(_signo, _stack_frame):
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 3:
         _usage(args[0])
         return 0

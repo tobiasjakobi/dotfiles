@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from __future__ import annotations
+
 
 ##########################################################################################
 # Imports
@@ -8,8 +10,9 @@
 
 import sys
 
+from argparse import ArgumentParser
 from dataclasses import dataclass
-from os.path import exists
+from pathlib import Path
 
 from magic import Magic
 from mutagen.flac import FLAC
@@ -25,128 +28,141 @@ _switcher = {
     'audio/flac': FLAC,
 }
 
+_replaygain_keys = (
+    'replaygain_algorithm',
+    'replaygain_reference_loudness',
+    'replaygain_track_gain',
+    'replaygain_track_peak',
+    'replaygain_track_range',
+    'replaygain_album_gain',
+    'replaygain_album_peak',
+    'replaygain_album_range',
+)
+
 
 ##########################################################################################
 # Dataclass definitions
 ##########################################################################################
 
 @dataclass(frozen=True)
-class InternalTag:
+class TagEntry:
     key: str
     value: str
 
+    def is_replaygain(self) -> bool:
+        '''
+        Check if this is ReplayGain tag.
+        '''
 
-##########################################################################################
-# Internal functions
-##########################################################################################
+        return self.key in _replaygain_keys
 
-def _usage(app: str):
-    print(f'Usage: {app} <filename> [--tag1name=tag1content] [--tag2name=tag2content] ...', file=sys.stdout)
+    def is_empty(self) -> bool:
+        '''
+        Check if the entry is empty.
+        '''
+
+        return self.value is None or len(self.value) == 0
+
+    @staticmethod
+    def from_arg(arg: str) -> TagEntry:
+        '''
+        Parse a tag entry from a CLI argument.
+
+        Arguments:
+            arg - the CLI argument string
+        '''
+
+        key, value = arg.split(':', maxsplit=1)
+
+        return TagEntry(key, value)
 
 
 ##########################################################################################
 # Functions
 ##########################################################################################
 
-def handle_arg(arg: str) -> InternalTag:
-    if len(arg) < 5:
-        raise RuntimeError('short argument')
+def vc_addtag(path: Path, entries: list[TagEntry]) -> None:
+    '''
+    Add a list of tag entries as VorbisComment.
 
-    if not arg.startswith('--'):
-        raise RuntimeError('unprefixed argument')
+    Arguments:
+        path    - path to the file which we add the tags to
+        entries - list of tag entries that we use
+    '''
 
-    raw_arg = arg[2:]
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
 
-    tmp = raw_arg.split('=', maxsplit=1)
+    input_type = Magic(mime=True).from_file(path.as_posix())
 
-    if len(tmp) != 2:
-        raise RuntimeError('malformed argument')
-
-    return InternalTag(key=tmp[0], value=tmp[1])
-
-def addtag(args: list) -> int:
-    mime = Magic(mime=True)
-
-    input = args[0]
-    tag_args = args[1:]
-
-    if not exists(input):
-        print(f'error: input file not found: {input}', file=sys.stderr)
-
-        return 1
-
-    input_type = mime.from_file(input)
-
-    audiotype = _switcher.get(input_type, None)
+    audiotype = _switcher.get(input_type)
     if audiotype is None:
-        print(f'error: input has unsupported type: {input_type}', file=sys.stderr)
+        raise RuntimeError(f'input has unsupported type: {input_type}')
 
-        return 2
+    audio_file = audiotype(path.as_posix())
 
-    try:
-        new_tags = [handle_arg(x) for x in tag_args]
-
-    except Exception as exc:
-        print(f'error: invalid tag argument: {exc}', file=sys.stderr)
-
-        return 3
-
-    try:
-        audio = audiotype(input)
-
-    except Exception as exc:
-        print(f'error: failed to open file: {exc}', file=sys.stderr)
-
-        return 4
-
-    if len(new_tags) == 0:
-        if not audio.tags:
-            print(f'info: no tags found: {input}', file=sys.stdout)
-
-            return 0
-
-        print(f'info: printing all tags of: {input}', file=sys.stdout)
-        for tag in audio.tags:
-            print(f'{tag[0]} = {tag[1]}', file=sys.stdout)
-
-        return 0
-
-    for it in new_tags:
-        if len(it.value) == 0:
-            if it.key in audio:
-                del audio[it.key]
+    if entries is None or len(entries) == 0:
+        if not audio_file.tags:
+            print(f'info: no tags found: {path}', file=sys.stdout)
         else:
-            audio[it.key] = it.value
+            print(f'info: printing all tags: {path}', file=sys.stdout)
 
-    try:
-        audio.save()
+            for tag_key, tag_value in audio_file.tags:
+                print(f'{tag_key.lower()} = {tag_value}', file=sys.stdout)
 
-    except Exception as exc:
-        print(f'error: failed to save new tags: {exc}', file=sys.stderr)
+    else:
+        for entry in entries:
+            if len(entry.value) == 0:
+                if entry.key in audio_file:
+                    del audio_file[entry.key]
+            else:
+                audio_file[entry.key] = entry.value
 
-        return 5
-
-    return 0
+        audio_file.save()
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
     '''
 
-    if len(args) < 2:
-        print('error: missing filename argument', file=sys.stderr)
-        _usage(args[0])
+    parser = ArgumentParser(description='Add VorbisComment tags to a file.')
 
-        return 1
+    parser.add_argument('-f', '--file', help='Path to file which we want to edit', required=True)
+    parser.add_argument('-t', '--tag', action='append', help='A tag key/value pair on the format key:value')
 
-    ret = addtag(args[1:])
+    parsed_args = parser.parse_args()
 
-    return ret
+    if parsed_args.file is not None:
+        file = Path(parsed_args.file)
+
+        tags = None
+
+        try:
+            if parsed_args.tag is not None:
+                tags = [TagEntry.from_arg(x) for x in parsed_args.tag]
+
+        except Exception as exc:
+            print(f'error: invalid tag argument given: {file}: {exc}', file=sys.stderr)
+
+            return 1
+
+        try:
+            vc_addtag(file, tags)
+
+        except Exception as exc:
+            print(f'error: failed to add VorbisComment tags: {file}: {exc}', file=sys.stderr)
+
+            return 2
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

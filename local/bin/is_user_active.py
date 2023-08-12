@@ -75,7 +75,7 @@ def _is_active_x11(id: int, user: str) -> bool:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
         return 0

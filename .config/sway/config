@@ -98,8 +98,7 @@ input "2:14:ETPS/2_Elantech_Touchpad" {
 input $keyboard_input {
     events enabled
     xkb_model pc105
-    xkb_layout de,us
-    xkb_variant nodeadkeys
+    xkb_layout de(nodeadkeys),us
     xkb_rules evdev
     xkb_options grp:win_space_toggle,compose:rctrl
     repeat_delay 300

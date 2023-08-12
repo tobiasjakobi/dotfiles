@@ -13,19 +13,20 @@ Apply this to a FLAC encoded EAC rip.
 
 import sys
 
-from os.path import expanduser, isdir, splitext, join as pjoin
-from os import getcwd, listdir, remove
+from argparse import ArgumentParser
+from pathlib import Path
+from shutil import copy2
 from subprocess import run as prun
-from tempfile import NamedTemporaryFile
+from tempfile import TemporaryDirectory
 
-from vc_addtag import addtag
+from vc_addtag import TagEntry, vc_addtag
 
 
 ##########################################################################################
 # Constants
 ##########################################################################################
 
-_template = expanduser('~/local/tagging.template')
+_template = Path('~/local/tagging.template')
 
 _editor = '/usr/bin/featherpad'
 
@@ -34,84 +35,77 @@ _editor = '/usr/bin/featherpad'
 # Functions
 ##########################################################################################
 
-def pretag(dir: str):
-    if not isdir(dir):
-        print(f'error: directory not found: {dir}', file=sys.stderr)
+def eac_pretag(path: Path) -> int:
+    '''
+    TODO: desc
+    '''
 
-        return 1
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
 
-    filelist = []
-    for file in sorted(listdir(dir)):
-        splitfile = splitext(file)
+    candidates = list(path.glob('*.flac'))
 
-        if len(splitfile) >= 2 and splitfile[1] == '.flac':
-            filelist.append(pjoin(dir, file))
+    with TemporaryDirectory(prefix='/tmp/') as tmp:
+        input_path = Path(tmp) / Path('input.txt')
 
-    filelist.sort()
+        copy2(_template.expanduser().as_posix(), input_path.as_posix())
 
-    input_fd = NamedTemporaryFile(mode='w', prefix='/dev/shm/', delete=False)
-    input_name = input_fd.name
+        prun([_editor, '--standalone', input_path.as_posix()], check=True)
 
-    # copy template
-    template_fd = open(_template, 'r')
-    input_fd.write(template_fd.read())
-    template_fd.close()
+        input_lines = input_path.read_text(encoding='utf-8').splitlines();
 
-    input_fd.close()
+    tag_entries = []
 
-    prun([_editor, '--standalone', input_name], check=True)
-    input_fd = open(input_name, 'r')
+    for line in input_lines:
+        try:
+            key_raw, value_raw = line.split('=', maxsplit=1)
 
-    tag_args = []
-
-    for arg in input_fd.read().splitlines():
-        if arg.find('=') == -1:
-            print(f'warn: skipping malformed line: {arg}', file=sys.stderr)
+        except ValueError:
+            print(f'warn: skipping malformed line: {line}', file=sys.stderr)
 
             continue
 
-        arg_split = arg.split('=', maxsplit=1)
-
-        tag_key = arg_split[0].rstrip(' ')
-        tag_entry = arg_split[1].lstrip(' ')
-
-        if len(tag_key) == 0:
-            print(f'warn: skipping malformed tag key: {tag_key}', file=sys.stderr)
+        entry = TagEntry(key_raw.rstrip(' '), value_raw.lstrip(' '))
+        if len(entry.key) == 0:
+            print(f'warn: skipping malformed tag key: {entry.key}', file=sys.stderr)
 
             continue
 
-        if len(tag_entry) == 0:
-            continue
+        if not entry.is_empty():
+            tag_entries.append(entry)
 
-        tag_args.append('--' + tag_key + '=' + tag_entry);
-
-    input_fd.close()
-    remove(input_name)
-
-    if len(tag_args) == 0:
-        return 0
-
-    for file in filelist:
-        vc_args = [file] + tag_args
-        addtag(vc_args)
-
-    return 0
+    if len(tag_entries) != 0:
+        [vc_addtag(cand, tag_entries) for cand in candidates]
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
-    current_dir = getcwd()
+def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
 
     if len(args) < 2:
-        print(f'info: using current directory: {current_dir}', file=sys.stdout)
-        ret = pretag(current_dir)
-    else:
-        ret = pretag(args[1])
+        work_dir = Path.cwd()
 
-    return ret
+        print(f'info: using current directory: {work_dir.name}', file=sys.stdout)
+    else:
+        work_dir = Path(args[1])
+
+    try:
+        eac_pretag(work_dir)
+
+    except Exception as exc:
+        print(f'error: failed to TODO: {work_dir.name}: {exc}', file=sys.stderr)
+
+        return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

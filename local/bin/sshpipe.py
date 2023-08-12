@@ -159,16 +159,16 @@ class cmd_dispatcher:
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
+def _usage(app: str) -> None:
     print(f'Usage: {app} <config file>', file=sys.stdout)
 
-def _is_ascii(ch):
+def _is_ascii(ch: int) -> bool:
     return ch >= 33 and ch <= 126
 
-def _is_ascii_digit(ch):
+def _is_ascii_digit(ch: int) -> bool:
     return ch >= 48 and ch <= 57
 
-def _mkdigit(ch):
+def _mkdigit(ch: int) -> int:
     return ch - 48
 
 def _pipe_selection_menu(win, cfg):
@@ -271,7 +271,7 @@ def _curses_main(stdscr, args: list) -> int:
 
     while True:
         name, pipe = _pipe_selection_menu(stdscr, json_cfg)
-        if name == None:
+        if name is None:
             break
 
         _pipe_menu(stdscr, name, pipe)
@@ -283,7 +283,7 @@ def _curses_main(stdscr, args: list) -> int:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
 

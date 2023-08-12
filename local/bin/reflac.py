@@ -8,15 +8,17 @@
 
 import sys
 
-from os.path import basename, exists, isdir, isfile, realpath, join as pjoin
-from os import walk
 from magic import Magic
 from multiprocessing import Pool
+from pathlib import Path
 from shutil import move
-from subprocess import run as prun
+from subprocess import CalledProcessError, run as prun
 from tempfile import TemporaryDirectory
 
-from flac_encode import StandardOutputProtector, flac_encode, is_flac
+from common_util import StandardOutputProtector, path_walk
+from audio_compare import audio_compare
+from flac_encode import flac_encode, is_flac
+from flac_md5 import flac_md5
 from vc_copytags import vc_copytags
 
 
@@ -27,88 +29,126 @@ from vc_copytags import vc_copytags
 def _usage(app: str):
     print(f'Usage: {app} <file or directory item> [<another item>...]', file=sys.stdout)
 
-def _recode(input_path: str, verbose: bool):
+def _decode_verify(input: Path, output: Path):
+    '''
+    Decode a FLAC file with additional verification.
+
+    Arguments:
+        input  - the input path
+        output - the output path
+
+    This first tries to decode the file with the reference decoder and standard settings.
+    If this fails, the it verifies the embedded MD5 signature using the ffmpeg decoder.
+    If the signature is valid, it decodes the file again with the reference decode, but this
+    time ignoring any errors. The decoding result is then compared with the input file
+    using the ffmpeg decoder.
+    '''
+
+    decode_fail = False
+
+    try:
+        p_args = ['flac', '--decode', '--totally-silent', f'--output-name={output.as_posix()}', input.as_posix()]
+        prun(p_args, check=True, capture_output=True, encoding='utf-8')
+
+    except CalledProcessError:
+        decode_fail = True
+
+    if not decode_fail:
+        return
+
+    if not flac_md5(input):
+        raise RuntimeError(f'MD5 signature invalid: {input}')
+
+    err_msg = None
+
+    try:
+        p_args = ['flac', '--decode', '--decode-through-errors', '--totally-silent', f'--output-name={output.as_posix()}', input.as_posix()]
+        prun(p_args, check=True, capture_output=True, encoding='utf-8')
+
+    except CalledProcessError as err:
+        err_msg = f'{err}: {err.stderr}'
+
+    if not output.is_file() or not audio_compare(input, output):
+        output.unlink(missing_ok=True)
+
+        raise RuntimeError(f'decoding failed: {input}: {err_msg}')
+
+def _re_encode(path: Path, verbose: bool) -> None:
     '''
     Internal recoding helper.
 
     Arguments:
-        input_path - path to input file
+        path - path to input file
     '''
 
     if verbose:
-        print(f'info: processing: {basename(input_path)}', file=sys.stdout)
+        print(f'info: processing: {path.name}', file=sys.stdout)
 
-    with TemporaryDirectory() as d:
-        decoding_output = pjoin(d, 'output.wav')
-        temp_output = pjoin(d, 'output.flac')
+    with TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
 
-        decode_args = ['flac', '--decode', '--totally-silent', f'--output-name={decoding_output}', input_path]
-        prun(decode_args, check=True, capture_output=True, encoding='utf-8')
+        decoding_output = tmp_path / Path('output.wav')
+        encoding_output = tmp_path / Path('output.flac')
 
-        flac_encode(decoding_output, False)
+        try:
+            _decode_verify(path, decoding_output)
+            flac_encode(decoding_output, False)
+            vc_copytags(path, encoding_output)
 
-        vc_copytags(input_path, temp_output)
+        except Exception as exc:
+            raise RuntimeError(f're-encode failed: {path}: {exc}') from exc
 
-        move(temp_output, input_path)
+        move(encoding_output.as_posix(), path.as_posix())
 
 
 ##########################################################################################
 # Functions
 ##########################################################################################
 
-def reflac(file_path: str, verbose: bool):
+def reflac(path: Path, verbose: bool) -> None:
     '''
     Recode a single FLAC file.
 
     Arguments:
-        file_path - path to filedirectory
-        verbose   - enable verbose output?
+        path    - path to file which we want to re-encode
+        verbose - enable verbose output?
     '''
 
-    if not isfile(file_path):
-        raise RuntimeError('path is not a file')
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
 
     mime = Magic(mime=True)
-    if not is_flac(mime, file_path):
+    if not is_flac(mime, path):
         raise RuntimeError('invalid file content (expected FLAC)')
 
     if verbose:
-        print(f'info: recoding file: {file_path}', file=sys.stdout)
+        print(f'info: recoding file: {path}', file=sys.stdout)
 
-    _recode(file_path, verbose=True)
+    _re_encode(path, verbose=True)
 
-def reflac_dir(directory_path: str, verbose: bool):
+def reflac_dir(path: Path, verbose: bool):
     '''
     Recode all FLAC files in a directory.
 
     Arguments:
-        directory_path - path to directorydirectory
-        verbose        - enable verbose output?
+        path    - path to directory which we want to re-encode
+        verbose - enable verbose output?
     '''
 
-    if not isdir(directory_path):
-        raise RuntimeError('path is not a directory')
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
 
     mime = Magic(mime=True)
 
     if verbose:
-        print(f'info: recoding directory: {directory_path}', file=sys.stdout)
+        print(f'info: re-encoding directory: {path}', file=sys.stdout)
 
-    directory_files = []
+    pool_args = [(x, True) for x in path_walk(path) if is_flac(mime, x)]
 
-    for dirpath, dirnames, filenames in walk(top=directory_path):
-        for fn in filenames:
-            tmp = pjoin(dirpath, fn)
-
-            if is_flac(mime, tmp):
-                directory_files.append(tmp)
-
-    recording_args = [(x, True) for x in directory_files]
-
-    with Pool() as p:
-        p.starmap(_recode, recording_args)
-        p.close()
-        p.join()
+    with Pool() as pool:
+        pool.starmap(_re_encode, pool_args)
+        pool.close()
+        pool.join()
 
     return 0
 
@@ -117,7 +157,7 @@ def reflac_dir(directory_path: str, verbose: bool):
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
         return 0
@@ -126,26 +166,29 @@ def main(args: list) -> int:
 
     with StandardOutputProtector():
         for arg in args[1:]:
-            if not exists(arg):
-                print(f'warn: skipping non-existing argument: {arg}', file=sys.stderr)
+            path = Path(arg)
+
+            if not path.exists():
+                print(f'warn: skipping non-existing path: {path}', file=sys.stderr)
                 continue
 
-            path = realpath(arg)
-
             try:
-                if isdir(path):
+                if path.is_dir():
                     reflac_dir(path, verbose=True)
-                elif isfile(path):
+                elif path.is_file():
                     reflac(path, verbose=True)
                 else:
-                    raise RuntimeError('invalid argument type')
+                    raise RuntimeError(f'invalid argument type: {path.stat().st_mode}')
 
             except Exception as exc:
-                print(f'warn: error occured while recoding: {arg}: {exc}', file=sys.stderr)
+                print(f'warn: error occured while recoding: {path}: {exc}', file=sys.stderr)
 
                 recoding_error = True
 
-    return 1 if recoding_error else 0
+    if recoding_error:
+        return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

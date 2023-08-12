@@ -20,7 +20,7 @@ from pathlib import Path
 from time import sleep
 from urllib.request import HTTPError, Request, urlopen
 
-from vc_addtag import addtag
+from vc_addtag import TagEntry, vc_addtag
 from vc_helper import gettag
 
 
@@ -237,10 +237,8 @@ class TagDescriptor:
         if self.path is None:
             return
 
-        vc_args = [self.path.absolute().as_posix(), f'--title={self.title}']
-
         print(f'info: Applying title to: {self.path}: {self.title}')
-        addtag(vc_args)
+        vc_addtag(self.path, [TagEntry('title', self.title)])
 
 
 ##########################################################################################
@@ -281,7 +279,7 @@ def _read_url(url: str) -> str:
     Read an URL an return the content as string.
     '''
 
-    req_retries = 5
+    req_retries = 20
     req_data = None
 
     while req_data is None and req_retries != 0:
@@ -295,7 +293,7 @@ def _read_url(url: str) -> str:
                 raise RuntimeError(f'failed to read URL: {err}')
 
         req_retries -= 1
-        sleep(2.0)
+        sleep(0.5)
 
     if req_data is None:
         raise RuntimeError('timeout while reading URL')
@@ -510,10 +508,10 @@ def main(args: list) -> int:
     else:
         assert False, 'not implemented'
 
-    with Pool() as _p:
-        _p.map(TagDescriptor.pool_func, tag_descriptors)
-        _p.close()
-        _p.join()
+    with Pool() as pool:
+        pool.map(TagDescriptor.pool_func, tag_descriptors)
+        pool.close()
+        pool.join()
 
     return 0
 
