@@ -8,15 +8,18 @@
 
 import sys
 
+from argparse import ArgumentParser
 from enum import IntEnum
 from magic import Magic
-from os.path import isdir, isfile, abspath, splitext, join as pjoin
-from os import listdir, rename
+from pathlib import Path
+from typing import Any
 
+from mutagen import MutagenError
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4
 from mutagen.oggvorbis import OggVorbis
 
+from common_util import path_walk
 from id3_addtag import is_mp3
 
 
@@ -43,13 +46,48 @@ _track_minimum_padding = 2
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
-    print(f'Usage: {app} <directory>', file=sys.stdout)
+def _is_valid_value(value: Any) -> bool:
+    '''
+    Check if a Mutagen tag value is valid.
 
-    msg = '''
-Renames audio files in the first level of the directory to canonical format.'''
+    Arguments:
+        value - the value to check
+    '''
+
+    if value is None:
+        return False
+
+    if not isinstance(value, list):
+        return False
+
+    '''
+    Disallow multiline tags.
+    '''
+    if len(value) != 1:
+        return False
+
+    return True
+
+def _is_valid_mp4_tuple(value: Any) -> bool:
+    '''
+    Check if the value is a valid MP4 tuple.
+
+    Arguments:
+        value - the value to check
+
+    A valid MP4 tuple is of the form (a, b) with a and b both integers.
+    '''
+
+    if not isinstance(value, tuple):
+        return False
     
-    print(msg, file=sys.stdout)
+    if len(value) != 0:
+        return False
+    
+    if not all([isinstance(x, int) for x in value]):
+        return False
+
+    return True
 
 def _number_padding(input: str, target: str, minimum: int) -> str:
     len_i = len(input)
@@ -70,198 +108,246 @@ def _padded_number(number: str, total: str, type: PaddingType) -> str:
 
     return ret + number
 
+def _padded_info(info: tuple[int, int], type: PaddingType) -> str:
+    number, total = map(str, info)
+
+    if type == PaddingType.Track:
+        ret = _number_padding(number, total, _track_minimum_padding)
+    elif type == PaddingType.Disc:
+        ret = _number_padding(number, total, 0)
+    else:
+        raise RuntimeError(f'unknown padding type {type}')
+
+    return ret + number
+
 
 ##########################################################################################
 # Functions
 ##########################################################################################
 
-def rename_flac_ogg(filename: str, is_flac: bool):
-    audio = FLAC(filename) if is_flac else OggVorbis(filename)
+def canonical_flac_ogg(path: Path, is_flac: bool) -> Path:
+    '''
+    Compute the canonical name of a FLAC / OggVorbis file.
 
+    Arguments:
+        path    - path to the file
+        is_flac - are we handling a FLAC file?
+
+    Returns a new path with the canonical name.
     '''
-    The mandatory tags are 'title', 'tracknumber' and 'tracktotal'.
-    '''
+
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
+
     try:
-        title = audio.tags['title']
-        tracknumber = audio.tags['tracknumber']
-        tracktotal = audio.tags['tracktotal']
+        audio = FLAC(path.as_posix()) if is_flac else OggVorbis(path.as_posix())
 
-    except Exception:
+    except MutagenError:
         return None
 
     '''
-    Optional tags are 'discnumber' and 'disctotal'.
+    The mandatory tag keys are title, tracknumber and tracktotal.
     '''
-    try:
-        discnumber = audio.tags['discnumber']
-        disctotal = audio.tags['disctotal']
-
-    except Exception:
-        discnumber = []
-        disctotal = []
+    title_value = audio.tags.get('title')
+    tracknumber_value = audio.get('tracknumber')
+    tracktotal_value = audio.get('tracktotal')
 
     '''
-    Disallow multiline tags.
+    Optional tag keys are discnumber and disctotal.
     '''
-    if len(title) != 1 or len(tracknumber) != 1 or len(tracktotal) != 1:
-        return None
+    discnumber_value = audio.tags.get('discnumber')
+    disctotal_value = audio.tags.get('disctotal')
 
-    basename = '{} {}'.format(_padded_number(tracknumber[0], tracktotal[0], PaddingType.Track), title[0])
+    for value in (title_value, tracknumber_value, tracktotal_value):
+        if not _is_valid_value(value):
+            return None
+
+    tracknumber = _padded_number(tracknumber_value[0], tracktotal_value[0], PaddingType.Track)
+
+    canonical_name = tracknumber + ' ' + title_value[0].replace('/', '~')
 
     '''
     Prepend discnumber prefix if available.
     '''
-    if len(discnumber) == 1 and len(disctotal) == 1:
-        return _padded_number(discnumber[0], disctotal[0], PaddingType.Disc) + basename
+    if _is_valid_value(discnumber_value) and _is_valid_value(disctotal_value):
+        discnumber = _padded_number(discnumber_value[0], disctotal_value[0], PaddingType.Disc)
 
-    return basename
+        canonical_name = discnumber + canonical_name
 
-def rename_mp3(filename):
-    print('renaming MP3: ' + filename)
-    raise RuntimeError('TODO/FIXME: rename_mp3: not implemented')
+    return path.parent / f'{canonical_name}{path.suffix}'
 
-    return None
-
-def rename_m4a(filename):
-    audio = MP4(filename)
-
+def canonical_mp3(path: Path) -> Path:
     '''
-    The mandatory tags are 'title', 'tracknumber' and 'tracktotal'.
-    'tracknumber' and 'tracktotal' are members of 'trackinfo'.
+    Compute the canonical name of a MP3 file.
+
+    Arguments:
+        path - path to the MP3 file
+
+    Returns a new path with the canonical name.
     '''
+
+    raise RuntimeError('TODO: canonical_mp3 not implemented')
+
+def canonical_m4a(path: Path) -> Path:
+    '''
+    Compute the canonical name of a M4A file.
+
+    Arguments:
+        path - path to the M4A file
+
+    Returns a new path with the canonical name.
+    '''
+
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
+
     try:
-        titles = audio.tags['\xa9nam']
-        trackinfo = audio.tags['trkn']
+        audio = MP4(path.as_posix())
 
-    except Exception:
+    except MutagenError:
         return None
-
-    if not isinstance(titles, list) or not isinstance(trackinfo, list):
-        return None
-
-    if len(titles) != 1 or len(trackinfo) != 1 or len(trackinfo[0]) != 2:
-        return None
-
-    title = titles[0]
-    tracknumber = trackinfo[0][0]
-    tracktotal = trackinfo[0][1]
 
     '''
-    Optional tags are 'discnumber' and 'disctotal'
-    TODO/FIXME: verify that this works
+    The mandatory tag keys contain the information about track title, track number
+    and total number of tracks.
+
+    The track number of total are mebers of the trackinfo value.
     '''
-    try:
-        discinfo = audio.tags['disk']
+    titles_value = audio.tags.get('\xa9nam')
+    trackinfo_value = audio.tags.get('trkn')
 
-    except Exception:
-        try:
-            discinfo = audio.tags['disknumber']
+    '''
+    Optional tag keys contain the information about disc number and total number
+    of discs.
+    '''
+    discinfo_value = audio.tags.get('disk')
+    if discinfo_value is None:
+        discinfo_value = audio.tags.get('disknumber')
 
-        except Exception:
-            discinfo = None
+    for value in (titles_value, trackinfo_value):
+        if not _is_valid_value(value):
+            return None
 
-    discnumber = None
-    disctotal = None
+    if not _is_valid_mp4_tuple(trackinfo_value[0]):
+        return None
 
-    basename = '{0} {1}'.format(_padded_number(str(tracknumber), str(tracktotal), PaddingType.Track), title)
+    tracknumber = _padded_info(trackinfo_value[0], PaddingType.Track)
+
+    canonical_name = tracknumber + ' ' + titles_value[0].replace('/', '~')
 
     '''
     Prepend discnumber prefix if available.
     '''
-    if discnumber is int and disctotal is int:
-        assert(False)
-        return _padded_number(str(discnumber), str(disctotal), PaddingType.Disc) + basename
+    if _is_valid_mp4_tuple(discinfo_value):
+        discnumber = _padded_info(discinfo_value[0], PaddingType.Disc)
 
-    return basename
+        canonical_name = discnumber + canonical_name
 
-def audio_rename(args: list) -> int:
+    return path.parent / f'{canonical_name}{path.suffix}'
+
+def audio_rename(path: Path) -> int:
+    '''
+    Rename all audio files in a directory path to canonical form.
+
+    Arguments:
+        path - path to directory
+    '''
+
+    if not path.is_dir():
+        raise RuntimeError(f'path is not a directory: {path}')
+
     mime = Magic(mime=True)
 
-    input = args[0]
+    rename_errors = 0
 
-    if not isdir(input):
-        print(f'error: directory not found: {input}', file=sys.stderr)
-
-        return 1
-
-    root = abspath(input)
-
-    retval = 0
-
-    for file in listdir(root):
-        absfile = pjoin(root, file)
-
-        if not isfile(absfile):
+    for entry in path_walk(path):
+        if not entry.is_file():
             continue
 
-        filetype = mime.from_file(absfile)
-        extension = splitext(absfile)[1]
+        entry_type = mime.from_file(entry.as_posix())
+        if len(entry.suffix) == 0:
+            print(f'error: entry without suffix: {entry}', file=sys.stderr)
 
-        if len(extension) == 0:
-            print(f'error: failed to find extension: {file}', file=sys.stderr)
-            retval = 2
+            rename_errors += 1
 
             continue
 
-        if filetype == 'audio/ogg':
-            canonical = rename_flac_ogg(absfile, is_flac=False)
-        elif filetype == 'audio/flac':
-            canonical = rename_flac_ogg(absfile, is_flac=True)
-        elif filetype in ('audio/x-m4a', 'video/mp4'):
-            canonical = rename_m4a(absfile)
-        elif filetype == 'audio/mpeg' or is_mp3(absfile):
-            canonical = rename_mp3(absfile)
+        if entry_type == 'audio/ogg':
+            canonical_entry = canonical_flac_ogg(entry, is_flac=False)
+        elif entry_type == 'audio/flac':
+            canonical_entry = canonical_flac_ogg(entry, is_flac=True)
+        elif entry_type in ('audio/x-m4a', 'video/mp4'):
+            canonical_entry = canonical_m4a(entry)
+        elif entry_type == 'audio/mpeg' or is_mp3(entry):
+            canonical_entry = canonical_mp3(entry)
         else:
             continue
 
-        if not canonical:
-            print(f'error: failed to find canonical name: {file}', file=sys.stderr)
-            retval = 3
+        if canonical_entry is None:
+            print(f'error: failed to find canonical form: {entry}', file=sys.stderr)
+
+            rename_errors += 1
 
             continue
 
-        newfile = canonical.replace('/', '~') + extension
-        absnewfile = pjoin(root, newfile)
-
         '''
-        Check if the input filename is already in canonical format.
+        Check if the input path is already canonical.
         '''
-        if absnewfile == absfile:
+        if entry.name == canonical_entry.name:
             continue
 
         '''
         Avoid overwriting existing files.
         '''
-        if isfile(absnewfile):
-            print(f'error: file with canonical name already exists: {newfile}', file=sys.stderr)
-            retval = 4
+        if canonical_entry.exists():
+            print(f'error: canonical entry already exists: {canonical_entry}', file=sys.stderr)
+
+            rename_errors += 1
 
             continue
 
         try:
-            rename(absfile, absnewfile)
+            entry.rename(canonical_entry)
 
         except Exception:
-            print(f'error: failed to rename: {file}', file=sys.stderr)
-            retval = 5
+            print(f'error: failed to rename: {entry}', file=sys.stderr)
 
-    return retval
+            rename_errors += 1
+
+    if rename_errors != 0:
+        raise RuntimeError(f'error during rename: {rename_errors}')
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
-    if len(args) < 2:
-        print('error: missing directory argument', file=sys.stderr)
-        _usage(args[0])
+def main(args: list[str]) -> int:
+    '''
+    Main function.
 
-        return 1
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
 
-    ret = audio_rename(args[1:])
+    parser = ArgumentParser(description='Rename all audio files in a directory path to canonical form.')
 
-    return ret
+    parser.add_argument('-d', '--directory', required=True, help='Directory where we look for audio files')
+
+    parsed_args = parser.parse_args()
+
+    if parsed_args.directory is not None:
+        directory = Path(parsed_args.directory)
+
+        try:
+            audio_rename(directory)
+
+        except Exception as exc:
+            print(f'error: failed to rename audio: {directory}: {exc}', file=sys.stderr)
+
+            return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

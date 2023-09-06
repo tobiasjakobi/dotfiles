@@ -21,7 +21,7 @@ from mutagen.flac import FLAC
 
 _ffmpeg = '/usr/bin/ffmpeg'
 
-_args_template = [_ffmpeg, '-hide_banner', '-loglevel', 'quiet']
+_args_template = [_ffmpeg, '-hide_banner', '-nostdin', '-loglevel', 'quiet']
 
 
 ##########################################################################################
