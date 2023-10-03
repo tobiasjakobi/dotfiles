@@ -8,12 +8,12 @@
 
 import sys
 
-from os.path import basename, isdir, realpath, splitext, join as pjoin
-from os import makedirs, walk
 from magic import Magic
 from multiprocessing import Pool
-from subprocess import CalledProcessError, run as prun
+from pathlib import Path
+from subprocess import DEVNULL, CalledProcessError, run as prun
 
+from common_util import path_walk
 from flac_encode import StandardOutputProtector, is_flac
 from rename_vfat import sanitize_vfat
 
@@ -22,7 +22,7 @@ from rename_vfat import sanitize_vfat
 # Constants
 ##########################################################################################
 
-_default_output = '/mnt/storage/transfer/fiio'
+_default_output = Path('/mnt/storage/transfer/fiio')
 
 
 ##########################################################################################
@@ -47,7 +47,7 @@ _quality = 5.0
 # Internal functions
 ##########################################################################################
 
-def _transcode(input_path: str, output_path: str):
+def _transcode(input_path: Path, output_path: Path) -> None:
     '''
     Internal transcode helper.
 
@@ -56,63 +56,59 @@ def _transcode(input_path: str, output_path: str):
         output_path - path of the output file
     '''
 
-    print(f'info: processing: {basename(input_path)}', file=sys.stdout)
+    print(f'info: processing: {input_path.name}', file=sys.stdout)
 
-    p_args = [
+    p_args = (
         'oggenc',
         '--quiet',
         f'--quality={_quality}',
-        f'--output={output_path}',
-        input_path
-    ]
+        f'--output={output_path.as_posix()}',
+        input_path.as_posix()
+    )
 
     try:
-        p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+        p = prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     except CalledProcessError as err:
-        print(f'warn: transcoding failed: {input_path}: {err}')
+        print(f'warn: transcoding failed: {input_path.name}: {err}')
         print(err.stdout)
 
-def _mk_output_directory(prefix: str, name: str) -> str:
+def _mk_output_directory(base_path: Path, album_path: Path) -> Path:
     '''
     Make and create output directory.
 
     Arguments:
-        prefix - prefix for path
-        name   - name of the album
+        base_path  - base path where directories are created
+        album_path - path of the album
     '''
 
-    base_original = basename(realpath(name))
-    base_sanitized = sanitize_vfat(base_original)
+    name_sanitized = sanitize_vfat(album_path.name)
 
-    output_dir = pjoin(prefix, base_sanitized.replace('(FLAC)', '(Vorbis)'))
+    output_dir = base_path / Path(name_sanitized.replace('(FLAC)', '(Vorbis)'))
 
-    makedirs(output_dir)
+    output_dir.mkdir(parents=True)
 
     return output_dir
 
-def _mk_output_path(prefix: str, name: str) -> str:
+def _mk_output_path(base_path: Path, entry_path: Path) -> Path:
     '''
     Make output path for an album file.
 
     Arguments:
-        prefix - prefix for path
+        base_path  - base path where files are created
         name   - name of the album file
     '''
 
-    base_original = basename(name)
-    base_root, _ = splitext(base_original)
+    entry_stem = entry_path.stem
 
-    base_sanitized = f'{sanitize_vfat(base_root)}.ogg'
-
-    return pjoin(prefix, base_sanitized)
+    return base_path / Path(f'{sanitize_vfat(entry_stem)}.ogg')
 
 
 ##########################################################################################
 # Functions
 ##########################################################################################
 
-def album_transcode(tmpfs: bool, album_path: str):
+def album_transcode(tmpfs: bool, album_path: Path) -> None:
     '''
     Transcode FLAC album to Ogg Vorbis.
 
@@ -121,41 +117,28 @@ def album_transcode(tmpfs: bool, album_path: str):
         album_path - path of the album
     '''
 
-    if not isdir(album_path):
+    if not album_path.is_dir():
         raise RuntimeError('album path is not a directory')
 
     mime = Magic(mime=True)
 
-    output_dir = _mk_output_directory('/tmp' if tmpfs else _default_output, album_path)
+    output_dir = _mk_output_directory(Path('/tmp') if tmpfs else _default_output, album_path)
 
     print(f'info: transcoding album: {album_path} -> {output_dir}', file=sys.stdout)
 
-    album_files = []
+    pool_args = [(x, _mk_output_path(output_dir, x)) for x in path_walk(album_path) if is_flac(mime, x)]
 
-    for dirpath, dirnames, filenames in walk(top=album_path):
-        for fn in filenames:
-            tmp = pjoin(dirpath, fn)
-
-            if is_flac(mime, tmp):
-                album_files.append(tmp)
-
-    transcoding_args = [(x, _mk_output_path(output_dir, x)) for x in album_files]
-
-    with Pool() as p:
-        p.starmap(_transcode, transcoding_args)
-        p.close()
-        p.join()
-
-    return 0
+    with Pool() as pool:
+        pool.starmap(_transcode, pool_args)
+        pool.close()
+        pool.join()
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
-    transcode_error = False
-
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
         return 0
@@ -172,17 +155,22 @@ def main(args: list) -> int:
     else:
         albums = args[1:]
 
+    transcode_error = False
+
     with StandardOutputProtector():
         for album in albums:
             try:
-                album_transcode(use_tmpfs, album)
+                album_transcode(use_tmpfs, Path(album))
 
             except Exception as exc:
                 print(f'warn: error occured while transcoding: {album}: {exc}', file=sys.stderr)
 
                 transcode_error = True
 
-        return 1 if transcode_error else 0
+        if transcode_error:
+            return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

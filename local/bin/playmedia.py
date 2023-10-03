@@ -8,11 +8,92 @@
 
 import sys
 
-from os import environ
-from os.path import exists
+from dataclasses import dataclass
+from enum import IntEnum, unique
+from os import environ as os_environ
+from pathlib import Path
 from subprocess import run as prun
 
 from i3ipc import Connection as I3Connection
+
+
+
+##########################################################################################
+# Enumerator definitions
+##########################################################################################
+
+@unique
+class InputType(IntEnum):
+    '''
+    Input type enumerator.
+
+    DVD    - input is a DVD, either given a device or image
+    BluRay - input is a BluRay, either given a device or image
+    Other  - input is something else, most likely a file
+    '''
+
+    DVD    = 0
+    BluRay = 1
+    Other  = 2
+
+@unique
+class ConfigType(IntEnum):
+    '''
+    Config type enumerator.
+
+    Sound    - config controlling sound
+    Decode   - config controlling generic decode characteristics
+    VideoOut - config controlling video output
+    Extra    - config controlling something else
+    '''
+
+    Sound    = 0
+    Decode   = 1
+    VideoOut = 2
+    Extra    = 3
+
+
+##########################################################################################
+# Dataclass definitions
+##########################################################################################
+
+@dataclass(frozen=True)
+class ConfigDescriptor:
+    '''
+    Config descriptor.
+
+    config_type - type of the config (see the enumerator for details)
+    desc        - human readable description
+    envvar      - environment variable key associated with the config
+    switcher    - switcher to map envvar values to mpv profiles
+    '''
+
+    config_type: ConfigType
+    desc: str
+    envvar: str
+    switcher: dict[str, tuple[str]]
+
+    def process(self, profiles: list[str]) -> None:
+        '''
+        Process the descriptor and generate profiles.
+
+        Arguments:
+            profiles - list of mpv profiles
+
+        This checks the environment variable and adds corresponding
+        profiles to the list.
+        '''
+
+        envvar_data = os_environ.get(self.envvar)
+        if envvar_data is None or len(envvar_data) == 0:
+            return
+
+        for arg in envvar_data.split(':'):
+            p = self.switcher.get(arg)
+            if p is None:
+                print(f'warn: unknown {self.desc} option: {arg}', file=sys.stderr)
+            else:
+                profiles.extend(p)
 
 
 ##########################################################################################
@@ -24,24 +105,43 @@ Use mpv provided by system.
 '''
 _player_binary = 'mpv'
 
-_sound_switcher = {
-    'drc': ['custom.drc'],
-    'downmix': ['custom.downmix'],
-}
-
-_decode_switcher = {
-    'swdec': ['custom.swdec'],
-}
-
-_vout_switcher = {
-    'hdmi': ['custom.extern_hdmi'],
-    'dp': ['custom.extern_dp'],
-}
-
-_extra_switcher = {
-    'bigcache': ['custom.bigcache'],
-    'english': ['custom.lang_en'],
-}
+_config_descriptors = (
+    ConfigDescriptor(
+        config_type=ConfigType.Sound,
+        desc='sound',
+        envvar='mpv_sound',
+        switcher={
+            'drc': ('custom.drc',),
+            'downmix': ('custom.downmix',),
+        },
+    ),
+    ConfigDescriptor(
+        config_type=ConfigType.Decode,
+        desc='decode',
+        envvar='mpv_decode',
+        switcher={
+            'swdec': ('custom.swdec',),
+        },
+    ),
+    ConfigDescriptor(
+        config_type=ConfigType.VideoOut,
+        desc='video out',
+        envvar='mpv_vout',
+        switcher={
+            'hdmi': ('custom.extern_hdmi',),
+            'dp': ('custom.extern_dp',),
+        },
+    ),
+    ConfigDescriptor(
+        config_type=ConfigType.Extra,
+        desc='extra',
+        envvar='mpv_extra',
+        switcher={
+            'bigcache': ('custom.bigcache',),
+            'english': ('custom.lang_en',),
+        },
+    ),
+)
 
 '''
 Name of the default external output.
@@ -75,18 +175,6 @@ External environment variables used:
 
     print(msg, file=sys.stdout)
 
-def _fetch_env(key: str) -> str:
-    '''
-    Fetch an environment variable.
-
-    Returns None if the variable does not exist.
-    '''
-
-    if key in environ:
-        return environ[key]
-
-    return None
-
 def _has_active_output(output_name: str) -> bool:
     '''
     Check if we have an active video output.
@@ -108,65 +196,34 @@ def _has_active_output(output_name: str) -> bool:
 
 
 ##########################################################################################
-# Main
+# Functions
 ##########################################################################################
 
-def main(args: list[str]) -> int:
-    if len(args) < 2:
-        _usage(args[0])
+def playmedia(input_url: str, device_path: Path) -> None:
+    '''
+    Helper to play media.
 
-        return 0
+    Arguments:
+        input_url   - the input URL
+        device_path - optional device path (can be None)
 
-    input = args[1]
+    This is a thin wrapper around mpv that does some automatic
+    profile handling.
+    '''
 
-    if input.startswith('dvdnav://'):
-        input_type = 'dvdnav'
-    elif input.startswith('dvdread://'):
-        input_type = 'dvdread'
-    elif input.startswith('bd://'):
-        input_type = 'bluray'
+    if input_url.startswith('dvdnav://'):
+        input_type = InputType.DVDNav
+    elif input_url.startswith('dvdread://'):
+        input_type = InputType.DVDRead
+    elif input_url.startswith('bd://'):
+        input_type = InputType.BluRay
     else:
-        input_type = 'other'
+        input_type = InputType.Other
 
     profiles = []
 
-    mpv_sound = _fetch_env('mpv_sound')
-    mpv_decode = _fetch_env('mpv_decode')
-    mpv_vout = _fetch_env('mpv_vout')
-    mpv_extra = _fetch_env('mpv_extra')
-    mpv_custom = _fetch_env('mpv_custom')
-
-    if mpv_sound is not None and len(mpv_sound) != 0:
-        for arg in mpv_sound.split(':'):
-            p = _sound_switcher.get(arg)
-            if p is None:
-                print(f'warn: unknown sound option: {arg}', file=sys.stderr)
-            else:
-                profiles.extend(p)
-
-    if mpv_decode is not None and len(mpv_decode) != 0:
-        for arg in mpv_decode.split(':'):
-            p = _decode_switcher.get(arg)
-            if p is None:
-                print(f'warn: unknown decode option: {arg}', file=sys.stderr)
-            else:
-                profiles.extend(p)
-
-    if mpv_vout is not None and len(mpv_vout) != 0:
-        for arg in mpv_vout.split(':'):
-            p = _vout_switcher.get(arg)
-            if p is None:
-                print(f'warn: unknown vout option: {arg}', file=sys.stderr)
-            else:
-                profiles.extend(p)
-
-    if mpv_extra is not None and len(mpv_extra) != 0:
-        for arg in mpv_extra.split(':'):
-            p = _extra_switcher.get(arg)
-            if p is None:
-                print(f'warn: unknown extra option: {arg}', file=sys.stderr)
-            else:
-                profiles.extend(p)
+    for desc in _config_descriptors:
+        desc.process(profiles)
 
     if _has_active_output(_external_output):
         print(f'info: using {_external_output} as preferred output')
@@ -174,6 +231,7 @@ def main(args: list[str]) -> int:
 
     config = ['--fs']
 
+    mpv_custom = os_environ.get('mpv_custom')
     if mpv_custom is not None:
         config.extend(mpv_custom.split())
 
@@ -183,22 +241,59 @@ def main(args: list[str]) -> int:
     # Debug:
     #print(config)
 
-    if input_type in ['dvdread', 'dvdnav']:
-        if len(args) > 2 and exists(args[2]):
-            config.append(f'--dvd-device={args[2]}')
-    elif input_type == 'bluray':
-        if len(args) > 2 and exists(args[2]):
-            config.append(f'--bluray-device={args[2]}')
+    if input_type == InputType.DVD:
+        if device_path is not None and device_path.exists():
+            config.append(f'--dvd-device={device_path.as_posix()}')
 
-        mpv_env = environ.copy()
-        mpv_env['LIBAACS_PATH'] = 'libmmbd'
-        mpv_env['LIBBDPLUS_PATH'] = 'libmmbd'
-    else:
+    elif input_type == InputType.BluRay:
+        if device_path is not None and device_path.exists():
+            config.append(f'--bluray-device={device_path.as_posix()}')
+
+        mpv_env = os_environ.copy()
+        mpv_env.update({'LIBAACS_PATH': 'libmmbd', 'LIBBDPLUS_PATH': 'libmmbd'})
+
+    elif input_type == InputType.Other:
         mpv_env = None
 
-    mpv_args = [_player_binary] + config + ['--', input]
+    else:
+        raise RuntimeError('invalid input type')
+
+    mpv_args = [_player_binary] + config + ['--', input_url]
 
     prun(mpv_args, env=mpv_env)
+
+
+##########################################################################################
+# Main
+##########################################################################################
+
+def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
+
+    if len(args) < 2:
+        _usage(args[0])
+
+        return 0
+
+    input_url = args[1]
+    device_path = None
+    if len(args) >= 3:
+        device_path = Path(args[2])
+
+    try:
+        playmedia(input_url, device_path)
+
+    except Exception as exc:
+        print(f'error: failed to play media: {exc}', file=sys.stderr)
+
+        return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

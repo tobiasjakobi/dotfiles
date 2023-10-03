@@ -9,7 +9,7 @@
 import sys
 
 from magic import Magic
-from os.path import exists
+from pathlib import Path
 
 from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
@@ -29,7 +29,7 @@ _switcher = {
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
+def _usage(app: str) -> None:
     print(f'Usage: {app} <filename> [tag1name] [tag2name] ...', file=sys.stdout)
 
 
@@ -37,59 +37,49 @@ def _usage(app: str):
 # Functions
 ##########################################################################################
 
-def cleantags(args: list) -> int:
+def vc_cleantags(path: Path, tag_keys: list[str]) -> None:
+    '''
+    Clean VorbisComment tags from a file.
+
+    Arguments:
+        path     - path to file
+        tag_keys - list of keys to clean
+    '''
+
     mime = Magic(mime=True)
 
-    input_name = args[0]
-    tag_args = args[1:]
+    if not path.is_file():
+        raise RuntimeError(f'path is not a file: {path}')
 
-    if not exists(input_name):
-        print(f'error: input file not found: {input_name}', file=sys.stderr)
+    input_type = mime.from_file(path.as_posix())
 
-        return 1
-
-    input_type = mime.from_file(input_name)
-
-    audiotype = _switcher.get(input_type, None)
+    audiotype = _switcher.get(input_type)
     if audiotype is None:
-        print(f'error: input has unsupported type: {input_type}', file=sys.stderr)
+        raise RuntimeError(f'input has unsupported type: {input_type}')
 
-        return 2
+    if len(tag_keys) == 0:
+        return
 
-    if len(tag_args) == 0:
-        return 0
+    audio = audiotype(path.as_posix())
 
-    try:
-        audio = audiotype(input_name)
+    for key in tag_keys:
+        key_lower = key.lower()
+        if key_lower in audio:
+            del audio[key_lower]
 
-    except Exception as exc:
-        print(f'error: failed to open file: {exc}', file=sys.stderr)
-
-        return 3
-
-    for it in tag_args:
-        it_lower = it.lower()
-        if it_lower in audio:
-            del audio[it_lower]
-
-    try:
-        audio.save()
-
-    except Exception as exc:
-        print(f'error: failed to save new tags: {exc}', file=sys.stderr)
-
-        return 4
-
-    return 0
+    audio.save()
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
     '''
 
     if len(args) < 2:
@@ -98,9 +88,17 @@ def main(args: list) -> int:
 
         return 1
 
-    ret = cleantags(args[1:])
+    try:
+        path = Path(args[1])
 
-    return ret
+        vc_cleantags(path, args[2:])
+
+    except Exception as exc:
+        print(f'error: failed clean VorbisComment tags: {path}: {exc}', file=sys.stderr)
+
+        return 1
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

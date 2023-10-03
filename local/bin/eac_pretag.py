@@ -16,7 +16,7 @@ import sys
 from argparse import ArgumentParser
 from pathlib import Path
 from shutil import copy2
-from subprocess import run as prun
+from subprocess import DEVNULL, run as prun
 from tempfile import TemporaryDirectory
 
 from vc_addtag import TagEntry, vc_addtag
@@ -37,7 +37,10 @@ _editor = '/usr/bin/featherpad'
 
 def eac_pretag(path: Path) -> int:
     '''
-    TODO: desc
+    Pretag an Exact Audio copy rip.
+
+    Arguments:
+        path - path to the rip directory
     '''
 
     if not path.is_dir():
@@ -50,9 +53,11 @@ def eac_pretag(path: Path) -> int:
 
         copy2(_template.expanduser().as_posix(), input_path.as_posix())
 
-        prun([_editor, '--standalone', input_path.as_posix()], check=True)
+        p_args = (_editor, '--standalone', input_path.as_posix())
 
-        input_lines = input_path.read_text(encoding='utf-8').splitlines();
+        prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
+
+        input_lines = input_path.read_text(encoding='utf-8').splitlines()
 
     tag_entries = []
 
@@ -101,7 +106,7 @@ def main(args: list[str]) -> int:
         eac_pretag(work_dir)
 
     except Exception as exc:
-        print(f'error: failed to TODO: {work_dir.name}: {exc}', file=sys.stderr)
+        print(f'error: failed to EAC pretag: {work_dir.name}: {exc}', file=sys.stderr)
 
         return 1
 

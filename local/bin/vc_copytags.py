@@ -19,7 +19,7 @@ from mutagen.flac import FLAC
 # Functions
 ##########################################################################################
 
-def vc_copytags(src_path: Path, dst_path: Path):
+def vc_copytags(src_path: Path, dst_path: Path) -> None:
     '''
     Copy VorbisComment tags from one file to another.
 
@@ -29,10 +29,10 @@ def vc_copytags(src_path: Path, dst_path: Path):
     '''
 
     if not src_path.is_file():
-        raise RuntimeError(f'source path not found: {src_path}')
+        raise RuntimeError(f'source path is not a file: {src_path}')
 
     if not dst_path.is_file():
-        raise RuntimeError(f'destination path not found: {dst_path}')
+        raise RuntimeError(f'destination path is not a file: {dst_path}')
 
     mime = Magic(mime=True)
     src_type = mime.from_file(src_path.as_posix())
@@ -60,7 +60,7 @@ def vc_copytags(src_path: Path, dst_path: Path):
         d.save()
 
     except Exception as exc:
-        raise RuntimeError(f'transfer of tags failed: {exc}')
+        raise RuntimeError(f'transfer of tags failed: {exc}') from exc
 
 
 ##########################################################################################
@@ -70,6 +70,9 @@ def vc_copytags(src_path: Path, dst_path: Path):
 def main(args: list[str]) -> int:
     '''
     Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
     '''
 
     parser = ArgumentParser(description='Copy VorbisComment and picture metadata.')
@@ -77,7 +80,7 @@ def main(args: list[str]) -> int:
     parser.add_argument('-s', '--source', help='Source path', required=True)
     parser.add_argument('-d', '--destination', help='Destination path', required=True)
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     try:
         source = Path(parsed_args.source)

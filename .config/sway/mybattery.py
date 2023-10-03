@@ -7,9 +7,7 @@
 ##########################################################################################
 
 import sys
-
-from os.path import join as pjoin
-
+from pathlib import Path
 from sysfs_helper import read_sysfs
 
 
@@ -17,8 +15,8 @@ from sysfs_helper import read_sysfs
 # Constants
 ##########################################################################################
 
-_state_file = '/run/acpi_acadapter'
-_sysfs_base = '/sys/class/power_supply/BAT0'
+_state_file = Path('/run/acpi_acadapter')
+_sysfs_base = Path('/sys/class/power_supply/BAT0')
 
 
 ##########################################################################################
@@ -26,25 +24,24 @@ _sysfs_base = '/sys/class/power_supply/BAT0'
 ##########################################################################################
 
 def read_battery() -> str:
+    now_path = _sysfs_base / Path('charge_now')
+    full_path = _sysfs_base / Path('charge_full')
+
     try:
-        charge_now = int(read_sysfs(pjoin(_sysfs_base, 'charge_now')))
-        charge_full = int(read_sysfs(pjoin(_sysfs_base, 'charge_full')))
+        charge_now = int(read_sysfs(now_path.as_posix()))
+        charge_full = int(read_sysfs(full_path.as_posix()))
 
     except Exception:
         return None
 
     try:
-        with open(_state_file, mode='r') as f:
-            ac_state = int(f.read())
+        ac_state = int(_state_file.read_text(encoding='utf-8').rstrip())
 
     except Exception:
         return None
 
     value = (charge_now * 100) // charge_full
-    if ac_state == 0:
-        msg = 'unplugged'
-    else:
-        msg = 'plugged in'
+    msg = 'unplugged' if ac_state == 0 else 'plugged in'
 
     return f'{value}% ({msg})'
 

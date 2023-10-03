@@ -804,7 +804,7 @@ def main(args: list[str]) -> int:
     parser.add_argument('-d', '--directory', help='Directory where tags should be applied', required=True)
     parser.add_argument('-c', '--credits-file', help='TODO', required=True)
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     if parsed_args.directory is not None and parsed_args.credits_file is not None:
         directory = Path(parsed_args.directory)

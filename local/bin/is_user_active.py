@@ -8,7 +8,8 @@
 
 import sys
 
-from subprocess import run as prun
+from subprocess import DEVNULL, run as prun
+from typing import Generator
 
 
 ##########################################################################################
@@ -19,38 +20,36 @@ def _usage(app: str):
     print(f'Usage: {app} <user>', file=sys.stdout)
 
 def _get_sessions() -> list[int]:
-    p_args = ['loginctl', '--no-legend', 'list-sessions']
+    p_args = ('loginctl', '--no-legend', 'list-sessions')
 
-    p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+    p = prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
-    sessions = []
+    def _solve(lines: list[str]) -> Generator[int, None, None]:
+        for line in lines:
+            try:
+                tmp, _ = line.rstrip().split(' ', maxsplit=1)
+                yield int(tmp)
 
-    for arg in p.stdout.splitlines():
-        line = arg.rstrip()
+            except ValueError:
+                pass
 
-        try:
-            session_id = int(line.split(' ', maxsplit=1)[0])
-
-        except Exception:
-            session_id = -1
-
-        sessions.append(session_id)
-
-    return sessions
+    return list(_solve(p.stdout.splitlines()))
 
 def _is_active_x11(id: int, user: str) -> bool:
-    p_args = ['loginctl', '--all', 'show-session', str(id)]
+    p_args = ('loginctl', '--all', 'show-session', str(id))
 
-    p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+    p = prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     name = None
     active = None
     type = None
 
-    for arg in p.stdout.splitlines():
-        line = arg.rstrip()
+    for line in p.stdout.splitlines():
+        try:
+            prop, value = line.rstrip().split('=', maxsplit=1)
 
-        prop, value = line.split('=', maxsplit=1)
+        except ValueError:
+            continue
 
         if prop == 'Name':
             name = value
@@ -59,16 +58,7 @@ def _is_active_x11(id: int, user: str) -> bool:
         elif prop == 'Type':
             type = value
 
-    if name != user:
-        return False
-
-    if active != 'yes':
-        return False
-
-    if type not in ('x11', 'wayland'):
-        return False
-
-    return True
+    return name == user and active == 'yes' and type in ('x11', 'wayland')
 
 
 ##########################################################################################
@@ -84,16 +74,10 @@ def main(args: list[str]) -> int:
 
     sessions = _get_sessions()
 
-    user_active = False
+    if not any(map(lambda s: _is_active_x11(s, user), sessions)):
+        return 1
 
-    for arg in sessions:
-        if arg < 0:
-            continue
-
-        if _is_active_x11(arg, user):
-            user_active = True
-
-    return 0 if user_active else 1
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

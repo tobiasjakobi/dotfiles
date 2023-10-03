@@ -9,11 +9,12 @@
 import sys
 
 from datetime import datetime
+from pathlib import Path
 from time import sleep
 
 from psutil import cpu_count, disk_partitions, disk_usage
 
-from mysensors import get_sensor, read_sensor, gpu_busy, sensor_descs
+from mysensors import SensorConfiguration, SensorContext, SensorDescriptor
 from mybattery import read_battery
 
 '''
@@ -26,6 +27,16 @@ Audio: 🔈 🔊 🎧 🎶 🎵 🎤
 Separators: \| ❘ ❙ ❚
 Misc: 🐧 💎 💻 💡 ⭐ 📁 ↑ ↓ ✉ ✅ ❎
 '''
+
+
+##########################################################################################
+# Constants
+##########################################################################################
+
+'''
+Path to config file for the sensors.
+'''
+_config_path = Path('~/.config/mysensors.conf')
 
 
 ##########################################################################################
@@ -60,10 +71,16 @@ def _bytes2human(n: int):
 ##########################################################################################
 
 class SwayTopBar:
-    def __init__(self, descs: dict):
-        self._cpu_info = get_sensor(descs['CPU'])
-        self._igpu_info = get_sensor(descs['iGPU'])
-        self._dgpu_info = get_sensor(descs['dGPU'])
+    def __init__(self, sconf_path: Path):
+        sensor_config = SensorConfiguration.from_path(sconf_path)
+
+        cpu_desc: SensorDescriptor = sensor_config.sensors.get('CPU')
+        igpu_desc: SensorDescriptor = sensor_config.sensors.get('iGPU')
+        dgpu_desc: SensorDescriptor = sensor_config.sensors.get('dGPU')
+
+        self._cpu_ctx: SensorContext = cpu_desc.get_context()
+        self._igpu_ctx: SensorContext = igpu_desc.get_context()
+        self._dgpu_ctx: SensorContext = dgpu_desc.get_context()
 
         self._base_interval = 1
 
@@ -85,17 +102,17 @@ class SwayTopBar:
         self._battery_status = None
         self._disk_space = None
 
-    def _get_cpu_status(self):
+    def _get_cpu_status(self) -> None:
         c = cpu_count()
 
-        temp = read_sensor(self._cpu_info)
+        temp = self._cpu_ctx.read()
         if temp is None:
             self._cpu_status = f'CPU: {c} cores online'
         else:
             self._cpu_status = f'CPU: {temp: >8}, {c} cores online'
 
-    def _get_igpu_status(self):
-        self._igpu_cur_temp = read_sensor(self._igpu_info)
+    def _get_igpu_status(self) -> None:
+        self._igpu_cur_temp = self._igpu_ctx.read()
 
         '''
         Handle the case that the dGPU is completely disabled.
@@ -106,8 +123,8 @@ class SwayTopBar:
 
         self._gpu_status = f'GPU: i {self._igpu_cur_temp: >8}, d {dgpu_temp: >8}'
 
-    def _get_dgpu_status(self):
-        self._dgpu_cur_temp = read_sensor(self._dgpu_info)
+    def _get_dgpu_status(self) -> None:
+        self._dgpu_cur_temp = self._dgpu_ctx.read()
 
         dgpu_temp = self._dgpu_cur_temp
         if dgpu_temp is None:
@@ -115,22 +132,22 @@ class SwayTopBar:
 
         self._gpu_status = f'GPU: i {self._igpu_cur_temp: >8}, d {dgpu_temp: >8}'
 
-    def _update_dgpu_interval(self):
-        busy = gpu_busy(self._dgpu_info)
-        
+    def _update_dgpu_interval(self) -> None:
+        busy = self._dgpu_ctx.gpu_busy()
+
         if busy is None or busy <= 10:
             self._dgpu_status_interval = 60
         else:
             self._dgpu_status_interval = 5
 
-    def _get_battery_status(self):
+    def _get_battery_status(self) -> None:
         bat_state = read_battery()
         if bat_state is None:
             bat_state = 'unknown'
 
         self._battery_status = f'🔌: {bat_state: <17}'
 
-    def _get_disk_space(self):
+    def _get_disk_space(self) -> None:
         rootfs = None
         home = None
         storage = None
@@ -153,7 +170,7 @@ class SwayTopBar:
 
         self._disk_space = f'Disk: {status}'
 
-    def _update(self):
+    def _update(self) -> None:
         if self._cpu_status_counter == 0:
             self._get_cpu_status()
             self._cpu_status_counter = self._cpu_status_interval
@@ -204,8 +221,8 @@ class SwayTopBar:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
-    bar = SwayTopBar(sensor_descs)
+def main(args: list[str]) -> int:
+    bar = SwayTopBar(_config_path.expanduser())
 
     while True:
         ret = bar.refresh()

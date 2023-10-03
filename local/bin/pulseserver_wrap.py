@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from __future__ import annotations
+
 
 ##########################################################################################
 # Imports
@@ -10,6 +12,7 @@ import sys
 
 from argparse import ArgumentParser
 from dataclasses import dataclass
+from enum import IntEnum, unique
 from json import loads as jloads
 from os import environ, sched_setaffinity
 from pathlib import Path
@@ -26,8 +29,58 @@ _pulseaudio_tcp_port = 4713
 _config_path_template = Path('~/.config/pulseserver_wrap.conf')
 _flatpak_args_template = ('/usr/bin/flatpak', 'run', '--branch=stable', '--arch=x86_64', '--filesystem=home', '--command={0}')
 _env_helper_template = Path('~/local/bin/flatpak_env_helper.sh')
-_affinity_mask = (0, 2, 4, 6)
 _logfile_template = Path('~/local/log')
+
+
+##########################################################################################
+# Enumerator definitions
+##########################################################################################
+
+@unique
+class CPUAffinity(IntEnum):
+    '''
+    CPU affinity enumerator.
+
+    Default       - use default CPU affinity setup (all cores are used)
+    SingleCore    - set CPU affinity mask to a single core
+    PhysicalCores - set CPU affinity mask physical cores only
+    '''
+
+    Default       = 0
+    SingleCore    = 1
+    PhysicalCores = 2
+
+    @staticmethod
+    def from_string(raw: str) -> CPUAffinity:
+        '''
+        Parse a CPU affinity enumerator from a raw string.
+
+        Arguments:
+            raw - the raw string input
+        '''
+
+        if raw is None or raw.lower() == 'default':
+            return CPUAffinity.Default
+        elif raw.lower() == 'single':
+            return CPUAffinity.SingleCore
+        elif raw.lower() == 'physical':
+            return CPUAffinity.PhysicalCores
+        else:
+            raise RuntimeError(f'invalid affinity string: {raw}')
+
+    def to_mask(self) -> tuple[int]:
+        '''
+        Convert CPU affinity enumerator to a affinity mask.
+        '''
+
+        if self.value == CPUAffinity.Default:
+            return None
+        elif self.value == CPUAffinity.SingleCore:
+            return (0,)
+        elif self.value == CPUAffinity.PhysicalCores:
+            return (0, 2, 4, 6)
+        else:
+            raise RuntimeError(f'invalid affinity enum: {self.value}')
 
 
 ##########################################################################################
@@ -36,10 +89,22 @@ _logfile_template = Path('~/local/log')
 
 @dataclass(frozen=True)
 class ConfigArguments:
+    '''
+    Dataclass encoding the configuration supplied via CLI arguments.
+
+    flatpak       - Are we wrapping a FlatPak application?
+    affinity      - CPU affinity setting (see the enumerator for details)
+    print_log     - Print the log of the application?
+    dxvk_config   - DXVK config alias
+    envvar_config - Environment variable config alias
+    args          - arguments passed to subprocess
+    '''
+
     flatpak: bool
-    affinity: bool
+    affinity: CPUAffinity
     print_log: bool
     dxvk_config: str
+    envvar_config: str
     args: list[str]
 
 
@@ -113,6 +178,8 @@ def pulseserver_wrap(config_args: ConfigArguments) -> None:
         raise RuntimeError('missing arguments')
 
     real_args = config_args.args.copy()
+    if real_args[0] == '--':
+        real_args = real_args[1:]
 
     try:
         config = jloads(_config_path_template.expanduser().read_text(encoding='utf-8'))
@@ -131,6 +198,10 @@ def pulseserver_wrap(config_args: ConfigArguments) -> None:
     dxvk_map = config.get('dxvkmap')
     if dxvk_map is None or not isinstance(dxvk_map, dict):
         raise RuntimeError('invalid config: missing DXVK map')
+
+    envvar_map = config.get('envvarmap')
+    if envvar_map is None or not isinstance(envvar_map, dict):
+        raise RuntimeError('invalid config: missing envvar map')
 
     # TODO: can we validate this some more?
 
@@ -164,6 +235,18 @@ def pulseserver_wrap(config_args: ConfigArguments) -> None:
 
         p_env['DXVK_CONFIG_FILE'] = Path(dxvk_config).expanduser()
 
+    if config_args.envvar_config is not None:
+        print(f'info: Environment variable config selected: {config_args.envvar_config}', file=sys.stdout)
+
+        if p_env is None:
+            p_env = environ.copy()
+
+        envvar_config = envvar_map.get(config_args.envvar_config)
+        if envvar_config is None or not isinstance(envvar_config, dict):
+            raise RuntimeError(f'unknown envvar config')
+
+        p_env.update(envvar_config)
+
     if config_args.flatpak:
         print('info: flatpak mode enabled', file=sys.stdout)
 
@@ -175,10 +258,11 @@ def pulseserver_wrap(config_args: ConfigArguments) -> None:
     else:
         logfile_base = Path(real_args[0]).name
 
-    if config_args.affinity:
-        print('info: fixing core affinity', file=sys.stdout)
+    affinity_mask = config_args.affinity.to_mask()
+    if affinity_mask is not None:
+        print(f'info: using CPU affinity mask: {affinity_mask}', file=sys.stdout)
 
-        affinity_func = _defer_func(sched_setaffinity, 0, _affinity_mask)
+        affinity_func = _defer_func(sched_setaffinity, 0, affinity_mask)
     else:
         affinity_func = None
 
@@ -220,17 +304,19 @@ def main(args: list[str]) -> int:
     parser = ArgumentParser()
 
     parser.add_argument('-f', '--flatpak', action='store_true', help='Are we wrapping a flatpak application?')
-    parser.add_argument('-a', '--affinity', action='store_true', help='Should we set the CPU affinity when launching the application?')
+    parser.add_argument('-a', '--affinity', choices=('single', 'physical'), help='Should we set the CPU affinity when launching the application?')
     parser.add_argument('-p', '--print-log', action='store_true', help='Should we print the log of the application?')
     parser.add_argument('-d', '--dxvk-config', help='DXVK config which should be used')
+    parser.add_argument('-e', '--envvar-config', help='Environment variable config which should be used')
 
-    parsed_args, additional_args = parser.parse_known_args()
+    parsed_args, additional_args = parser.parse_known_args(args[1:])
 
     config = ConfigArguments(
         parsed_args.flatpak,
-        parsed_args.affinity,
+        CPUAffinity.from_string(parsed_args.affinity),
         parsed_args.print_log,
         parsed_args.dxvk_config,
+        parsed_args.envvar_config,
         additional_args,
     )
 

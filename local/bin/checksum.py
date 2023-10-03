@@ -10,7 +10,7 @@ import sys
 
 from dataclasses import dataclass
 from getopt import getopt, GetoptError
-from hashlib import new as hash_new
+from hashlib import file_digest
 from multiprocessing import Pool
 from os.path import basename, dirname, exists, isdir, isfile, realpath, splitext, join as pjoin
 from os import listdir, rename, remove
@@ -23,7 +23,7 @@ from tempfile import NamedTemporaryFile
 # Constants
 ##########################################################################################
 
-_hash_chunk_size = 64 * 1024 * 1024
+_cksfv = '/usr/bin/cksfv'
 
 
 ##########################################################################################
@@ -194,16 +194,7 @@ def _try_singlefile(arg):
 
 def _sha_check_internal(base_dir: str, t: _SHATuple) -> None:
     with open(pjoin(base_dir, t.filename), mode='rb') as f:
-        h = hash_new('sha256')
-
-        # TODO/LATER: replace with file_digest() from hashlib
-        while True:
-            input_bytes = f.read(_hash_chunk_size)
-            if not input_bytes:
-                break
-
-            h.update(input_bytes)
-
+        h = file_digest(f, 'sha256')
         filesize = f.tell()
 
     if h.digest() != t.hash:
@@ -298,10 +289,10 @@ def sha_check(arg) -> int:
     internal_args = [(base_directory, arg) for arg in sha_tuples]
 
     try:
-        with Pool() as p:
-            p.starmap(_sha_check_internal, internal_args)
-            p.close()
-            p.join()
+        with Pool() as pool:
+            pool.starmap(_sha_check_internal, internal_args)
+            pool.close()
+            pool.join()
 
     except Exception as exc:
         print(f'error: sha_check: check failure: {exc}', file=sys.stderr)
@@ -340,7 +331,7 @@ def sfv_check(arg) -> int:
     filebase = basename(input_path)
     working = dirname(input_path)
 
-    p_args = ['cksfv', '-q', '-f', filebase]
+    p_args = (_cksfv, '-q', '-f', filebase)
 
     try:
         prun(p_args, cwd=working, check=True)
@@ -475,6 +466,13 @@ def sfv_migrate(arg) -> int:
 ##########################################################################################
 
 def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
+
     getopt_largs = ('help', 'sha-scan', 'sha-check', 'sfv-migrate', 'sfv-check')
 
     try:

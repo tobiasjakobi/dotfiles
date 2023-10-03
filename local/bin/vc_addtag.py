@@ -138,7 +138,7 @@ def main(args: list[str]) -> int:
     parser.add_argument('-f', '--file', help='Path to file which we want to edit', required=True)
     parser.add_argument('-t', '--tag', action='append', help='A tag key/value pair on the format key:value')
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     if parsed_args.file is not None:
         file = Path(parsed_args.file)

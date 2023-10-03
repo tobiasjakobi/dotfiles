@@ -8,143 +8,102 @@
 
 import sys
 
-from getopt import getopt, GetoptError
-from os.path import isdir, isfile, splitext
-from os import walk
+from argparse import ArgumentParser
+from pathlib import Path
+from typing import Generator
+
+from common_util import path_walk
 
 
 ##########################################################################################
-# Internal functions
+# Functions
 ##########################################################################################
 
-def _usage(app: str):
-    print(f'Usage: {app} [--remove] --link-list <file> --directory <dir>', file=sys.stdout)
+def linklist_analyse(link_list: Path, work_dir: Path, remove_lines: bool) -> None:
+    '''
+    Analyse a link list.
+
+    Arguments:
+        link_list    - path to the link list file
+        work_dir     - working directory for the analysis
+        remove_lines - should we remove deprecated lines from the link list?
+    '''
+
+    if not link_list.is_file():
+        raise RuntimeError(f'link list is not a file: {link_list}')
+
+    if not work_dir.is_dir():
+        raise RuntimeError(f'work dir is not a directory: {link_list}')
+
+    def _gen_prefixes(path: Path) -> Generator[str, None, None]:
+        for entry in path_walk(path):
+            if entry.suffix not in ('.jpeg', '.mkv', '.mp4', '.wmv', '.avi'):
+                print(f'warn: skipping file with unknown extension: {entry.name}', file=sys.stderr)
+            else:
+                yield entry.stem
+
+    prefixes = set(_gen_prefixes(work_dir))
+
+    if remove_lines:
+        links = link_list.read_text(encoding='utf-8').splitlines()
+
+        def _gen_output(lines: list[str]) -> Generator[str, None, None]:
+            for line in lines:
+                if not any(map(lambda p: line.find(p) != -1, prefixes)):
+                    yield line
+
+        output_lines = list(_gen_output(links))
+
+        with open(link_list, mode='wt', encoding='utf-8') as f:
+            map(lambda l: print(l, file=f), output_lines)
+
+    else:
+        print('info: the following lines can be removed from the link-list:', file=sys.stdout)
+
+        lineidx = 0
+        links = link_list.read_text(encoding='utf-8').splitlines()
+
+        for link in links:
+            lineidx += 1
+
+            for arg in prefixes:
+                if link.find(arg) != -1:
+                    print(f'{lineidx}: {link.strip()}', file=sys.stdout)
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
-    link_list = None
-    directory = None
-    remove_lines = False
+def main(args: list[str]) -> int:
+    '''
+    Main function.
 
-    getopt_largs = ['help', 'remove', 'link-list=', 'directory=']
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
 
-    try:
-        opts, oargs = getopt(args[1:], 'hrl:d:', getopt_largs)
+    parser = ArgumentParser(description='Helper to analyze a link list file.')
 
-    except GetoptError as err:
-        print(f'error: getopt parsing failed: {err}' , file=sys.stderr)
-        _usage(args[0])
+    parser.add_argument('-r', '--remove-lines', action='store_true', help='Should deprecated lines be removed from the link list?')
+    parser.add_argument('-l', '--link-list', help='Path to the link list file', required=True)
+    parser.add_argument('-d', '--directory', help='Path to the working directory', required=True)
 
-        return 1
+    parsed_args = parser.parse_args(args[1:])
 
-    for o, a in opts:
-        if o in ('-h', '--help'):
-            _usage(args[0])
+    if parsed_args.link_list is not None and parsed_args.directory is not None:
+        link_list = Path(parsed_args.link_list)
+        directory = Path(parsed_args.directory)
 
-            return 0
-        elif o in ('-l', '--link-list'):
-            if not isfile(a):
-                print(f'error: invalid link-list: {a}', file=sys.stderr)
+        try:
+            linklist_analyse(link_list, directory, parsed_args.remove_lines)
 
-                return 1
+        except Exception as exc:
+            print(f'error: failed to analyse linklis: {exc}', file=sys.stderr)
 
-            link_list = a
-        elif o in ('-d', '--directory'):
-            if isdir(a):
-                print(f'error: invalid directory: {a}', file=sys.stderr)
+            return 1
 
-                return 2
-
-            directory = a
-        elif o in ('-r', '--remove'):
-            remove_lines = True
-        else:
-            raise RuntimeError('unhandled options')
-
-    if link_list is None:
-        print('error: no link-list given', file=sys.stderr)
-
-        return 4
-
-    if directory is None:
-        print('error: no directory given', file=sys.stderr)
-
-        return 5
-
-    prefixes = []
-    filelist = []
-
-    for dp, dn, fn in walk(directory):
-        filelist += fn
-
-    for file in filelist:
-        filesplit = splitext(file)
-
-        ext_switcher = {
-            '.jpeg': False,
-            '.mkv': True,
-            '.mp4': True,
-            '.wmv': True,
-            '.avi': True
-        }
-
-        if len(filesplit) != 2:
-            print(f'warn: skipping file with no extension: {file}', file=sys.stderr)
-
-            continue
-
-        fileext = ext_switcher.get(filesplit[1], None)
-
-        if fileext is None:
-            print(f'warn: skipping file with unknown extension: {file}', file=sys.stderr)
-
-            continue
-
-        file_components = file.split('.')
-
-        if len(file_components) < 2:
-            print(f'warn: skipping file with unknown formatting: {file}', file=sys.stder)
-
-            continue
-
-        prefixes.append(file_components[0])
-
-    prefix_set = set(prefixes)
-
-    if remove_lines:
-        output_lines = []
-
-        with open(link_list) as f:
-            for links in f.read().splitlines():
-                found = False
-
-                for arg in prefix_set:
-                    if links.find(arg) != -1:
-                        found = True
-                        break
-
-                if not found:
-                    output_lines.append(links)
-
-        with open(link_list, mode='w') as f:
-            map(lambda x: print(x, file=f), output_lines)
-
-    else:
-        print('info: the following lines can be removed from the link-list:', file=sys.stdout)
-
-        lineidx = 0
-
-        with open(link_list) as f:
-            for links in f.readlines():
-                lineidx += 1
-
-                for arg in prefix_set:
-                    if links.find(arg) != -1:
-                        print(f'{lineidx}: {links.strip()}', file=sys.stdout)
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

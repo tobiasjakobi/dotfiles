@@ -12,7 +12,7 @@ from magic import Magic
 from multiprocessing import Pool
 from pathlib import Path
 from shutil import move
-from subprocess import run as prun
+from subprocess import DEVNULL, run as prun
 from tempfile import TemporaryDirectory
 
 from audio_compare import audio_compare
@@ -60,11 +60,11 @@ def _encode(path: Path, verbose: bool) -> None:
         encoding_output = tmp_path / Path('output.flac')
         reference_output = tmp_path / Path('reference.wav')
 
-        flake_args = ['flake', '-q', '-12', path.as_posix(), '-o', encoding_output.as_posix()]
-        prun(flake_args, check=True, capture_output=True, encoding='utf-8')
+        flake_args = ('flake', '-q', '-12', path.as_posix(), '-o', encoding_output.as_posix())
+        prun(flake_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
-        decode_args = ['flac', '--decode', '--silent', f'--output-name={reference_output.as_posix()}', encoding_output.as_posix()]
-        prun(decode_args, check=True, capture_output=True, encoding='utf-8')
+        decode_args = ('flac', '--decode', '--silent', f'--output-name={reference_output.as_posix()}', encoding_output.as_posix())
+        prun(decode_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
         if not audio_compare(path, reference_output):
             raise RuntimeError('mismatch between original source and reference decoding')
@@ -72,8 +72,8 @@ def _encode(path: Path, verbose: bool) -> None:
         '''
         flake doesn't add a seektable by default, so add one here.
         '''
-        seekpoint_args = ['metaflac', f'--add-seekpoint={_seekpoint_distance}s', encoding_output.as_posix()]
-        prun(seekpoint_args, check=True, capture_output=True, encoding='utf-8')
+        seekpoint_args = ('metaflac', f'--add-seekpoint={_seekpoint_distance}s', encoding_output.as_posix())
+        prun(seekpoint_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
         move(encoding_output.as_posix(), output_path.as_posix())
 
@@ -140,7 +140,7 @@ def flac_encode(path: Path, verbose: bool) -> None:
 
     _encode(path, False)
 
-def flac_encode_dir(path: Path, verbose: bool):
+def flac_encode_dir(path: Path, verbose: bool) -> None:
     '''
     Encode all WAV files in a directory to FLAC.
 
@@ -170,6 +170,13 @@ def flac_encode_dir(path: Path, verbose: bool):
 ##########################################################################################
 
 def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
+
     if len(args) < 2:
         _usage(args[0])
         return 0

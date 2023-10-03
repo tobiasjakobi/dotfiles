@@ -99,6 +99,13 @@ def rename_vfat_dir(path: Path) -> None:
 ##########################################################################################
 
 def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
+
     if len(args) < 2:
         _usage(args[0])
         return 0
@@ -112,8 +119,6 @@ def main(args: list[str]) -> int:
             rename_vfat_dir(path)
 
         except Exception as exc:
-            print(type(exc))
-
             print(f'warn: error occured while renaming: {path}: {exc}', file=sys.stderr)
 
             rename_error = True

@@ -52,7 +52,7 @@ class _InternalEntry:
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
+def _usage(app: str) -> None:
     print(f'Usage: {app} [--single] [directory] <tag argument>', file=sys.stdout)
 
 
@@ -161,7 +161,7 @@ def single_tag(dir_name: str, tag: str) -> int:
 
         file_type = mime.from_file(file)
 
-        audiotype = _switcher.get(file_type, None)
+        audiotype = _switcher.get(file_type)
         if audiotype is None:
             print(f'warn: skipping unsupported type: {file}: {file_type}', file=sys.stderr)
 
@@ -190,9 +190,12 @@ def single_tag(dir_name: str, tag: str) -> int:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
     '''
 
     single_mode = False

@@ -1,21 +1,79 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from __future__ import annotations
+
 
 ##########################################################################################
 # Imports
 ##########################################################################################
 
-from __future__ import annotations
-
 import sys
 
 from dataclasses import dataclass
-from os.path import isdir, isfile, islink, join as pjoin
-from os import listdir
+from enum import IntEnum, unique
+from json import loads as jloads
+from pathlib import Path
 from re import compile as rcompile
+from typing import Any
 
 from sysfs_helper import read_sysfs, get_parent_device
+
+
+##########################################################################################
+# Constants
+##########################################################################################
+
+'''
+sysfs base path for hardware monitoring devices.
+'''
+_sysfs_base = Path('/sys/class/hwmon/')
+
+'''
+Path to config file for the sensors.
+'''
+_config_path = Path('~/.config/mysensors.conf')
+
+_hwmon_re = rcompile('^hwmon[0-9]+$')
+_label_re = rcompile('^temp[0-9]+_label$')
+
+
+##########################################################################################
+# Enumerator definitions
+##########################################################################################
+
+@unique
+class SensorType(IntEnum):
+    '''
+    Enumerator for sensor type.
+
+    Default - default sensor type
+    ATA     - ATA sensor type
+    '''
+
+    Default = 0
+    ATA     = 1
+
+    @staticmethod
+    def from_json(raw_data: Any) -> SensorType:
+        '''
+        Parse a sensor type from raw JSON data.
+
+        Arguments:
+            raw_data - the raw input data
+
+        Returns None on invalid input.
+        '''
+
+        if not isinstance(raw_data, str):
+            return None
+
+        if raw_data == 'default':
+            return SensorType.Default
+        elif raw_data == 'ata':
+            return SensorType.ATA
+        else:
+            return None
 
 
 ##########################################################################################
@@ -23,187 +81,400 @@ from sysfs_helper import read_sysfs, get_parent_device
 ##########################################################################################
 
 @dataclass(frozen=True)
-class SensorDevice:
+class SensorIdentifier:
+    '''
+    Dataclass encoding identifier for the default sensor type.
+
+    vendor_id - vendor ID of the underlying device
+    device_id - device ID of the underlying device
+    '''
+
     vendor_id: int
     device_id: int
 
+    def is_match(self, path: Path) -> bool:
+        '''
+        Check if a sysfs device path matches the identifier.
+
+        Arguments:
+            path - the sysfs device path
+        '''
+
+        device_path = path / Path('device')
+        vendor_path = path / Path('vendor')
+
+        try:
+            device_id = int(read_sysfs(device_path.as_posix()), 16)
+            vendor_id = int(read_sysfs(vendor_path.as_posix()), 16)
+
+        except (ValueError, TypeError):
+            return False
+
+        return vendor_id == self.vendor_id and device_id == self.device_id
+
+    @staticmethod
+    def from_json(raw_data: Any) -> SensorIdentifier:
+        '''
+        Parse a sensor identifier from raw JSON data.
+
+        Arguments:
+            raw_data - the raw input data
+
+        Returns None on invalid input.
+        '''
+
+        if not isinstance(raw_data, dict):
+            return None
+
+        for entry in ('vendor_id', 'device_id'):
+            if not isinstance(raw_data.get(entry), str):
+                return None
+
+        try:
+            vendor_id = int(raw_data['vendor_id'], 16)
+            device_id = int(raw_data['device_id'], 16)
+
+        except (ValueError, TypeError):
+            return None
+
+        return SensorIdentifier(vendor_id, device_id)
+
 @dataclass(frozen=True)
-class SensorDescription:
+class ATASensorIdentifer:
+    '''
+    Dataclass encoding identifier for the ATA sensor type.
+
+    vendor   - vendor string of the underlying ATA device
+    model    - model string of the underlying ATA device
+    revision - revision string of the underlying ATA device
+    '''
+
+    vendor: str
+    model: str
+    revision: str
+
+    def is_match(self, path: Path) -> bool:
+        '''
+        Check if a sysfs device path matches the identifier.
+
+        Arguments:
+            path - the sysfs device path
+        '''
+
+        vendor_path = path / Path('vendor')
+        model_path = path / Path('model')
+        revision_path = path / Path('rev')
+
+        vendor = read_sysfs(vendor_path.as_posix())
+        model = read_sysfs(model_path.as_posix())
+        revision = read_sysfs(revision_path.as_posix())
+
+        return vendor == self.vendor and model == self.model and revision == self.revision
+
+    @staticmethod
+    def from_json(raw_data: Any) -> ATASensorIdentifer:
+        '''
+        Parse a ATA sensor identifier from raw JSON data.
+
+        Arguments:
+            raw_data - the raw input data
+
+        Returns None on invalid input.
+        '''
+
+        if not isinstance(raw_data, dict):
+            return None
+
+        for entry in ('vendor', 'model', 'revision'):
+            if not isinstance(raw_data.get(entry), str):
+                return None
+
+        return ATASensorIdentifer(
+            raw_data['vendor'],
+            raw_data['model'],
+            raw_data['revision'],
+        )
+
+@dataclass(frozen=True)
+class SensorDescriptor:
+    '''
+    Dataclass encoding a sensor descriptor.
+
+    description     - human readable description of the sensor
+    sensor_type     - type of the sensor (see the enumerator for details)
+    ignore          - should we ignore this sensor descriptor?
+    driver          - kernel driver of the sensor
+    label           - label of the sensor
+    identifier      - identifier for sensors of default type
+    sata_identifier - identifier for sensors of SATA type
+    '''
+
+    description: str
+    sensor_type: SensorType
+    ignore: bool
     driver: str
     label: str
-    device: SensorDevice
+    identifier: SensorIdentifier
+    ata_identifier: ATASensorIdentifer
+
+    def _lookup_label(self, path: Path) -> str:
+        '''
+        Helper for looking up the sensor label.
+
+        Arguments:
+            path - sysfs path of sensor device
+        '''
+
+        for entry in path.iterdir():
+            if not _label_re.findall(entry.name):
+                continue
+
+            sensor_label = read_sysfs(entry.as_posix())
+            if sensor_label == self.label:
+                return entry.name
+
+        return None
+
+    def _identify_sensor(self, path: Path) -> SensorContext:
+        '''
+        Helper for identifying a sensor.
+
+        Arguments:
+            path - sysfs path of sensor device
+        '''
+    
+        name_path = path / Path('name')
+
+        sensor_driver = read_sysfs(name_path.as_posix())
+        if sensor_driver != self.driver:
+            return None
+
+        if self.sensor_type == SensorType.Default:
+            parent_device = Path(get_parent_device(path.as_posix()))
+            if not self.identifier.is_match(parent_device):
+                return None
+        elif self.sensor_type == SensorType.ATA:
+            parent_device = path / Path('device')
+            if not self.ata_identifier.is_match(parent_device):
+                return None
+        else:
+            return None
+
+        if self.label is not None:
+            label_node = self._lookup_label(path)
+            if label_node is None:
+                return None
+
+            try:
+                prefix, _ = label_node.rsplit('_', maxsplit=1)
+
+            except ValueError:
+                return None
+        else:
+            prefix = 'temp1'
+
+        value_path = path / Path(f'{prefix}_input')
+
+        return SensorContext(self, value_path, parent_device)
+
+    def get_context(self) -> SensorContext:
+        '''
+        Lookup a sensor using the descriptor.
+
+        Returns a SensorContext, or None if the sensor does not exist.
+        '''
+
+        if not _sysfs_base.is_dir():
+            return None
+
+        for entry in _sysfs_base.iterdir():
+            if not  _hwmon_re.findall(entry.name):
+                continue
+
+            if not entry.is_symlink():
+                continue
+
+            info = self._identify_sensor(entry)
+            if info is not None:
+                return info
+
+        return None
+
+    @staticmethod
+    def from_json(descriptor_data: Any) -> SensorDescriptor:
+        '''
+        Parse a sensor descriptor from raw JSON data.
+
+        Arguments:
+            raw_data - the raw input data
+        '''
+
+        if not isinstance(descriptor_data, dict):
+            raise RuntimeError('bad descriptor format')
+
+        for entry in ('desc', 'type', 'ignore', 'driver', 'label', 'identifier'):
+            if not entry in descriptor_data:
+                raise RuntimeError(f'descriptor entry missing: {entry}')
+
+        description = descriptor_data['desc']
+        if not isinstance(description, str):
+            raise RuntimeError(f'invalid description: {description}')
+
+        raw_type = descriptor_data['type']
+        sensor_type = SensorType.from_json(raw_type)
+        if sensor_type is None:
+            raise RuntimeError(f'invalid type: {raw_type}')
+
+        ignore = descriptor_data['ignore']
+        if not isinstance(ignore, bool):
+            raise RuntimeError(f'invalid ignore flag: {ignore}')
+
+        driver = descriptor_data['driver']
+        if not isinstance(driver, str):
+            raise RuntimeError(f'invalid driver: {description}')
+
+        label = descriptor_data['label']
+        if label is not None and not isinstance(label, str):
+            raise RuntimeError(f'invalid label: {description}')
+
+        raw_identifier = descriptor_data['identifier']
+        if sensor_type == SensorType.Default:
+            identifier = SensorIdentifier.from_json(raw_identifier)
+            if identifier is None:
+                raise RuntimeError(f'invalid identifier: {raw_identifier}')
+
+            ata_identifier = None
+        elif sensor_type == SensorType.ATA:
+            identifier = None
+
+            ata_identifier = ATASensorIdentifer.from_json(raw_identifier)
+            if ata_identifier is None:
+                raise RuntimeError(f'invalid ATA identifier: {raw_identifier}')
+        else:
+            raise RuntimeError(f'unknown sensor type: {sensor_type}')
+
+        return SensorDescriptor(
+            description,
+            sensor_type,
+            ignore,
+            driver,
+            label,
+            identifier,
+            ata_identifier,
+        )
 
 @dataclass(frozen=True)
-class SensorDeviceInfo:
-    value_path: str
-    parent_path: str
-
-
-##########################################################################################
-# Constants
-##########################################################################################
-
-_sysfs_base = '/sys/class/hwmon/'
-
-_hwmon_re = rcompile('^hwmon[0-9]+$')
-_label_re = rcompile('^temp[0-9]+_label$')
-
-sensor_descs = {
-    # AMD Ryzen 7 4800H
-    'CPU': SensorDescription(driver = 'k10temp', label = 'Tctl', device = SensorDevice(0x1022, 0x144b)),
-
-    # Primary 512GB NVME SSD (PM991 NVMe Samsung 512GB).
-    'NVME0': SensorDescription(driver = 'nvme', label = 'Sensor 1', device = SensorDevice(0x144d, 0xa808)),
-
-    # Secondary 1TB NVME SSD (Samsung SSD 970 EVO 1TB).
-    'NVME1': SensorDescription(driver = 'nvme', label = 'Sensor 1', device = SensorDevice(0x144d, 0xa809)),
-
-    # Integrated AMD Renoir GPU.
-    'iGPU': SensorDescription(driver= 'amdgpu', label = 'edge', device = SensorDevice(0x1002, 0x1636)),
-
-    # Dedicated AMD Navi10 GPU.
-    'dGPU': SensorDescription(driver= 'amdgpu', label = 'junction', device = SensorDevice(0x1002, 0x731f)),
-}
-
-
-##########################################################################################
-# Internal functions
-##########################################################################################
-
-def _is_sensor_online(info: SensorDeviceInfo) -> bool:
-    runtime_status = read_sysfs(pjoin(info.parent_path, 'power/runtime_status'))
-    if runtime_status is None:
-        return False
-
-    return runtime_status == 'active'
-
-def _is_matching_device(path: str, sdev: SensorDevice) -> bool:
-    try:
-        device_id = int(read_sysfs(pjoin(path, 'device')), 16)
-        vendor_id = int(read_sysfs(pjoin(path, 'vendor')), 16)
-
-    except Exception:
-        return False
-
-    return vendor_id == sdev.vendor_id and device_id == sdev.device_id
-
-def _lookup_label(path: str, label: str) -> str:
-    for arg in listdir(path):
-        res = _label_re.findall(arg)
-        if len(res) == 0:
-            continue
-
-        sensor_label = read_sysfs(pjoin(path, arg))
-        if sensor_label == label:
-            return arg
-
-    return None
-
-def _identify_sensor(path: str, desc: SensorDescription) -> SensorDeviceInfo:
-    sensor_driver = read_sysfs(pjoin(path, 'name'))
-    if sensor_driver != desc.driver:
-        return None
-
-    parent_device = get_parent_device(path)
-    if not _is_matching_device(parent_device, desc.device):
-        return None
-
-    label_node = _lookup_label(path, desc.label)
-    if label_node is None:
-        return None
-
-    try:
-        prefix, _ = label_node.rsplit('_', maxsplit=1)
-        sensor_input = f'{prefix}_input'
-
-    except Exception:
-        return None
-
-    value_path = pjoin(path, sensor_input)
-
-    return SensorDeviceInfo(value_path, parent_device)
-
-def _read_sensor_internal(info: SensorDeviceInfo) -> str:
+class SensorConfiguration:
     '''
-    Internal helper to read the sensor value.
+    Dataclass encoding the sensor configuration.
 
-    Arguments:
-        info - the sensor device info to use
+    sensors - dictionary mapping sensor ID to descriptor
     '''
 
-    content = read_sysfs(info.value_path)
+    sensors: dict[str, SensorDescriptor]
 
-    if content is None or not content.isdigit():
-        return 'Error'
-    else:
-        value = int(content)
+    @staticmethod
+    def from_path(path: Path) -> SensorConfiguration:
+        '''
+        Create a sensor config from a config path.
 
-    return '{0:6.2f}°C'.format(float(value) / 1000.0)
+        Arguments:
+            path - path from where we read the config
+        '''
 
+        if not path.is_file():
+            raise RuntimeError(f'config path is not a file: {path}')
 
-##########################################################################################
-# Functions
-##########################################################################################
+        config_raw = path.read_text(encoding='utf-8')
+        config_data = jloads(config_raw)
 
-def get_sensor(desc: SensorDescription) -> SensorDeviceInfo:
+        if not isinstance(config_data, dict):
+            raise RuntimeError('bad config format')
+
+        sensors: dict[str, SensorDescriptor] = dict()
+
+        for key, value in config_data.items():
+            try:
+                descriptor = SensorDescriptor.from_json(value)
+
+            except Exception as exc:
+                print(f'warn: skipping invalid descriptor entry: {key}: {exc}', file=sys.stderr)
+
+                continue
+
+            sensors[key] = descriptor
+
+        return SensorConfiguration(sensors)
+
+@dataclass(frozen=True)
+class SensorContext:
     '''
-    Lookup a sensor using a sensor description.
+    Dataclass encoding a sensor context.
 
-    Arguments:
-        desc - the sensor description to use
-
-    Returns a SensorDeviceInfo object, or None if the sensors does not exist.
-    '''
-
-    if not isdir(_sysfs_base):
-        return None
-
-    for arg in listdir(_sysfs_base):
-        res = _hwmon_re.findall(arg)
-        if len(res) == 0:
-            continue
-
-        p = pjoin(_sysfs_base, arg)
-        if not islink(p):
-            continue
-
-        info = _identify_sensor(p, desc)
-        if info is not None:
-            return info
-
-    return None
-
-def read_sensor(info: SensorDeviceInfo) -> str:
-    '''
-    Read current sensor value.
-
-    Arguments:
-        info - the sensor device info to use
+    descriptor - descriptor belonging to the context
+    value_path - path 
     '''
 
-    if not _is_sensor_online(info):
-        return 'N/A'
+    descriptor: SensorDescriptor
+    value_path: Path
+    parent_path: Path
 
-    return _read_sensor_internal(info)
+    def _read_internal(self) -> str:
+        '''
+        Internal read helper.
+        '''
 
-def gpu_busy(info: SensorDeviceInfo) -> int:
-    '''
-    Read the GPU busy ratio of the sensor's parent device.
+        value = read_sysfs(self.value_path.as_posix())
 
-    Arguments:
-        info - the sensor device info to use
+        if value is None or not value.isdigit():
+            return 'Error'
 
-    Reading the busy ratio is only supported if the parent device is a GPU.
-    '''
+        return '{0:6.2f}°C'.format(float(int(value)) / 1000.0)
 
-    if not _is_sensor_online(info):
-        return None
+    def is_online(self) -> bool:
+        '''
+        Check if the sensor is online.
+        '''
 
-    gpu_busy_percent = read_sysfs(pjoin(info.parent_path, 'gpu_busy_percent'))
-    if gpu_busy_percent is None:
-        return None
+        status_path = self.parent_path / Path('power/runtime_status')
+        if not status_path.is_file():
+            return False
 
-    return int(gpu_busy_percent)
+        runtime_status = read_sysfs(status_path.as_posix())
+        if runtime_status is None:
+            return False
+
+        return runtime_status == 'active'
+
+    def read(self) -> str:
+        '''
+        Read current sensor value.
+        '''
+
+        if not self.is_online():
+            return 'N/A'
+
+        return self._read_internal()
+
+    def gpu_busy(self) -> int:
+        '''
+        Read the GPU busy ratio of the sensor's parent device.
+
+        Reading the busy ratio is only supported if the parent device is a GPU.
+        '''
+
+        if not self.is_online():
+            return None
+
+        busy_path = self.parent_path / Path('gpu_busy_percent')
+        if not busy_path.is_file():
+            return None
+
+        value = read_sysfs(busy_path.as_posix())
+        if value is None or not value.isdigit():
+            return None
+
+        return int(value)
 
 
 ##########################################################################################
@@ -211,26 +482,39 @@ def gpu_busy(info: SensorDeviceInfo) -> int:
 ##########################################################################################
 
 def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
+
     if len(args) < 2:
         return 0
 
     sensor = args[1]
 
     try:
-        desc = sensor_descs[sensor]
+        config = SensorConfiguration.from_path(_config_path.expanduser())
 
     except Exception as exc:
-        print(f'error: unknown sensor requested: {sensor}: {exc}', file=sys.stderr)
+        print(f'error: failed to read config from path: {_config_path}: {exc}', file=sys.stderr)
 
         return 1
 
-    info = get_sensor(desc)
-    if info is None:
-        print('error: sensor not found', file=sys.stderr)
+    descriptor = config.sensors.get(sensor)
+    if descriptor is None:
+        print(f'error: unknown sensor requested: {sensor}', file=sys.stderr)
 
         return 2
 
-    sensor_value = read_sensor(info)
+    ctx = descriptor.get_context()
+    if ctx is None:
+        print('error: sensor not found', file=sys.stderr)
+
+        return 3
+
+    sensor_value = ctx.read()
 
     print(f'Sensor {sensor}: {sensor_value}', file=sys.stdout)
 

@@ -14,7 +14,7 @@ from argparse import ArgumentParser
 from dataclasses import dataclass
 from magic import Magic
 from pathlib import Path
-from subprocess import CalledProcessError, run as prun
+from subprocess import DEVNULL, CalledProcessError, run as prun
 from xml.dom.minidom import Element as XMLElement, parseString as xml_parse
 
 from id3_addtag import is_mp3, id3_addtag
@@ -26,7 +26,7 @@ from vc_addtag import TagEntry, vc_addtag
 # Constants
 ##########################################################################################
 
-_bs1770_template = [
+_bs1770_template = (
     '/usr/bin/bs1770gain',
     '--integrated',
     '--range',
@@ -34,7 +34,7 @@ _bs1770_template = [
     '--ebu',
     '--suppress-progress',
     '--xml'
-]
+)
 
 
 ##########################################################################################
@@ -92,10 +92,10 @@ def bs1770gain(path: Path) -> None:
 
     mime = Magic(mime=True)
 
-    p_args = _bs1770_template + [path.as_posix()]
+    p_args = _bs1770_template + (path.as_posix(),)
 
     try:
-        p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+        p = prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     except CalledProcessError as err:
         raise RuntimeError('bs1770gain CLI failed: {err}') from err
@@ -186,7 +186,7 @@ def main(args: list[str]) -> int:
 
     parser.add_argument('-d', '--directory', required=True, help='Directory where we want to scan')
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     if parsed_args.directory is not None:
         work_dir = Path(parsed_args.directory)

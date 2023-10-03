@@ -16,7 +16,7 @@ from json import dumps as jdumps, loads as jloads
 from os.path import exists
 from os import environ
 from socket import socket, AF_UNIX, SOCK_STREAM, error as socket_error
-from subprocess import run as prun
+from subprocess import DEVNULL, run as prun
 from time import time
 
 
@@ -89,13 +89,13 @@ def _rifle_cmd(args: list[str]) -> int:
     retry_script = False
 
     try:
-        p = prun(args, capture_output=True, encoding='utf-8')
+        p = prun(args, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     except FileNotFoundError:
         retry_script = True
 
     if retry_script:
-        p = prun(['exec_script.sh'] + args, capture_output=True, encoding='utf-8')
+        p = prun(['exec_script.sh'] + args, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     res = CommandResult(
         cmd    = args,
@@ -135,6 +135,9 @@ def _rifle_cmd(args: list[str]) -> int:
 def main(args: list[str]) -> int:
     '''
     Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
     '''
 
     if len(args) < 2:

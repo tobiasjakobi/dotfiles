@@ -10,7 +10,7 @@ import sys
 
 from argparse import ArgumentParser
 from pathlib import Path
-from subprocess import run as prun
+from subprocess import DEVNULL, run as prun
 
 from mutagen.flac import FLAC
 
@@ -21,7 +21,7 @@ from mutagen.flac import FLAC
 
 _ffmpeg = '/usr/bin/ffmpeg'
 
-_args_template = [_ffmpeg, '-hide_banner', '-nostdin', '-loglevel', 'quiet']
+_args_template = (_ffmpeg, '-hide_banner', '-nostdin', '-loglevel', 'quiet')
 
 
 ##########################################################################################
@@ -45,15 +45,15 @@ def flac_md5(path: Path) -> bool:
     bps = flac.info.bits_per_sample
 
     if bps in (16, 32):
-        codec_args = []
+        codec_args = tuple()
     elif bps == 24:
-        codec_args = ['-acodec', 'pcm_s24le']
+        codec_args = ('-acodec', 'pcm_s24le')
     else:
         raise RuntimeError('invalid bits-per-sample')
 
-    p_args = _args_template + ['-i', path.as_posix()] + codec_args + ['-f', 'hash', '-hash', 'MD5', '-']
+    p_args = _args_template + ('-i', path.as_posix()) + codec_args + ('-f', 'hash', '-hash', 'MD5', '-')
 
-    p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+    p = prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     output_lines = p.stdout.splitlines()
     if len(output_lines) != 1:
@@ -77,7 +77,7 @@ def main(args: list[str]) -> int:
 
     parser.add_argument('-f', '--file', help='FLAC file to check', required=True)
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     if parsed_args.file is not None:
         file = Path(parsed_args.file)

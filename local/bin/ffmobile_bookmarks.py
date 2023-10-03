@@ -8,8 +8,8 @@
 
 import sys
 
-from csv import reader as creader
-from subprocess import run as prun
+from csv import reader as csv_reader
+from subprocess import DEVNULL, run as prun
 
 '''
 Fetch Firefox bookmarks dump via SSH and format everything into a simple HTML list.
@@ -28,7 +28,7 @@ _html_footer = '\t\t<br>\n\t</body>\n</html>'
 
 _bookmarks_dump = '/storage/emulated/0/Misc/ff_bookmarks.dump'
 
-_ssh_args = ['/usr/bin/ssh', 'moto-g4', f'cat {_bookmarks_dump}']
+_ssh_args = ('/usr/bin/ssh', 'moto-g4', f'cat {_bookmarks_dump}')
 
 
 ##########################################################################################
@@ -48,7 +48,7 @@ def main(args: list) -> int:
 
         csv_data = bookmark_raw[1].rstrip(');')
 
-        for row in creader([csv_data], quotechar='\''):
+        for row in csv_reader([csv_data], quotechar='\''):
             bookmarks.append((row[1], row[2]))
 
     print(_html_header, file=sys.stdout)
@@ -56,7 +56,7 @@ def main(args: list) -> int:
     for x, y in bookmarks:
         print(f'\t\t<a target=\"_blank\" href=\"{y}\">{x}</a><br>', file=sys.stdout)
 
-    print(html_footer, file=sys.stdout)
+    print(_html_footer, file=sys.stdout)
 
     return 0
 

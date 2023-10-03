@@ -38,7 +38,7 @@ def main(args: list[str]) -> int:
     parser.add_argument('-e', '--encoding', type=str, help='Soucrce character encoding', required=True)
     parser.add_argument('-f', '--file', type=str, help='Input file', required=True)
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     encoding = parsed_args.encoding
     file = Path(parsed_args.file)

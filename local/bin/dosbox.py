@@ -10,7 +10,7 @@ import sys
 
 from os.path import expanduser
 from os import environ
-from subprocess import Popen, run as prun
+from subprocess import DEVNULL, Popen, run as prun
 
 
 ##########################################################################################
@@ -48,7 +48,7 @@ def main(args: list) -> int:
         _soundfont
     ]
 
-    fsynth_p = Popen(fsynth_args, capture_output=True, encoding='utf-8')
+    fsynth_p = Popen(fsynth_args, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     dosbox_args = ['dosbox', '-conf', config]
 
@@ -62,7 +62,7 @@ def main(args: list) -> int:
     fsynth_p.terminate()
 
     fsynth_out = fsynth_p.stdout.read().splitlines()
-    ret = fsynth_p.wait()
+    fsynth_p.wait()
 
     print('info: fluidsynth output:', file=sys.stdout)
     for line in fsynth_out:

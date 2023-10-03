@@ -10,7 +10,7 @@ import sys
 
 from datetime import datetime
 from os.path import expanduser
-from subprocess import run as prun
+from subprocess import DEVNULL, run as prun
 
 from i3ipc import Connection as I3Connection
 
@@ -46,15 +46,15 @@ def _full_shot(path: str):
             break
 
     if focused_output is None:
-        grim_args = [_grim, path]
+        grim_args = (_grim, path)
     else:
-        grim_args = [_grim, '-o', focused_output, path]
+        grim_args = (_grim, '-o', focused_output, path)
 
-    prun(grim_args, check=True)
+    prun(grim_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
 def _select_shot(path: str):
-    slurp_args = [_slurp]
-    p = prun(slurp_args, check=True, capture_output=True, encoding='utf-8')
+    slurp_args = (_slurp)
+    p = prun(slurp_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     slurp_out = p.stdout.splitlines()
     if len(slurp_out) != 1:
@@ -62,8 +62,8 @@ def _select_shot(path: str):
 
     area = slurp_out[0].rstrip()
 
-    grim_args = [_grim, '-g', area, path]
-    prun(grim_args)
+    grim_args = (_grim, '-g', area, path)
+    prun(grim_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
 
 ##########################################################################################

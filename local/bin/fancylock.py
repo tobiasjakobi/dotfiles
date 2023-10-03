@@ -11,12 +11,19 @@ from __future__ import annotations
 import sys
 
 from dataclasses import dataclass
-from json import loads as jloads
-from os.path import join as pjoin
-from subprocess import run as prun
+from pathlib import Path
+from subprocess import DEVNULL, run as prun
 from tempfile import TemporaryDirectory
 
 from i3ipc import Connection as I3Connection
+
+
+##########################################################################################
+# Constants
+##########################################################################################
+
+_convert = '/usr/bin/convert'
+_grim = '/usr/bin/grim'
 
 
 ##########################################################################################
@@ -65,31 +72,53 @@ def _get_focused_output() -> OutputInfo:
 
     return None
 
-def _bg(file: str, output: OutputInfo):
-    if output is None:
-        grim_args = ['/usr/bin/grim', file]
-    else:
-        grim_args = ['/usr/bin/grim', '-o', output.name, file]
+def _bg(path: Path, output: OutputInfo) -> None:
+    p_args = (_grim, path.as_posix()) if output is None else (_grim, '-o', output.name, path.as_posix())
 
-    prun(grim_args, check=True)
+    prun(p_args, check=True, stdin=DEVNULL)
 
-def _bgblur(infile: str, outfile: str):
-    bgblur_args = ['/usr/bin/convert', infile, '-scale', '25%', '-blur', '0x2', '-scale', '400%', '-fill', 'black', '-colorize', '50%', outfile ]
-    prun(bgblur_args, check=True)
+def _bgblur(input_path: Path, output_path: Path) -> None:
+    p_args = (
+        _convert, input_path.as_posix(),
+        '-scale', '25%',
+        '-blur', '0x2',
+        '-scale', '400%',
+        '-fill', 'black',
+        '-colorize', '50%',
+        output_path.as_posix(),
+    )
 
-def _locktext(file: str, width: int, height: int):
+    prun(p_args, check=True, stdin=DEVNULL)
+
+def _locktext(path: Path, width: int, height: int) -> None:
     pango_markup = """pango:<span foreground='#ffffff' background='#000000' font_desc='Liberation Sans 34'>Type password to unlock</span>"""
-    locktext_args = ['/usr/bin/convert', '-size', f'{width}x{height}', '-background', 'black', '-gravity', 'center', pango_markup, file]
-    prun(locktext_args, check=True)
+    p_args = (
+        _convert,
+        '-size', f'{width}x{height}',
+        '-background', 'black',
+        '-gravity', 'center',
+        pango_markup,
+        path.as_posix(),
+    )
 
-def _merge(infile1: str, infile2: str, outfile: str):
-    merge_args = ['/usr/bin/convert', infile1, infile2, '-gravity', 'center', '-composite', '-matte', outfile]
-    prun(merge_args, check=True)
+    prun(p_args, check=True, stdin=DEVNULL)
 
-def _makelock(dir: str, outfile: str):
-    bg_file = pjoin(dir, 'bg.png')
-    locktext_file = pjoin(dir, 'locktext.png')
-    bgblur_file = pjoin(dir, 'bgblur.png')
+def _merge(primary_path: Path, secondary_path: Path, output_path: Path) -> None:
+    p_args = (
+        _convert,
+        primary_path.as_posix(), secondary_path.as_posix(),
+        '-gravity', 'center',
+        '-composite',
+        '-matte',
+        output_path.as_posix(),
+    )
+
+    prun(p_args, check=True, stdin=DEVNULL)
+
+def _makelock(tmp_path: Path, output_path: Path) -> None:
+    bg_path = tmp_path / Path('bg.png')
+    locktext_path = tmp_path / Path('locktext.png')
+    bgblur_path = tmp_path / Path('bgblur.png')
 
     output = _get_focused_output()
 
@@ -100,10 +129,36 @@ def _makelock(dir: str, outfile: str):
         locktext_width = output.resolution[0]
         locktext_height = int(float(output.resolution[1]) * 0.06)
 
-    _bg(bg_file, output)
-    _locktext(locktext_file, locktext_width, locktext_height)
-    _bgblur(bg_file, bgblur_file)
-    _merge(bgblur_file, locktext_file, outfile)
+    _bg(bg_path, output)
+    _locktext(locktext_path, locktext_width, locktext_height)
+    _bgblur(bg_path, bgblur_path)
+    _merge(bgblur_path, locktext_path, output_path)
+
+
+##########################################################################################
+# Functions
+##########################################################################################
+
+def fancylock() -> None:
+    '''
+    Helper to compose a fancy lock screen.
+    '''
+
+    with TemporaryDirectory(prefix='/tmp/') as tmp:
+        tmp_path = Path(tmp)
+        output_path = tmp_path / Path('output.png')
+
+        args_base = ('/usr/bin/swaylock', '--daemonize')
+
+        try:
+            _makelock(tmp_path, output_path)
+
+            p_args = args_base + ('--scaling', 'fill', '--image', output_path.as_posix())
+
+        except Exception:
+            p_args = args_base
+
+        prun(p_args, check=True, stdin=DEVNULL)
 
 
 ##########################################################################################
@@ -111,18 +166,20 @@ def _makelock(dir: str, outfile: str):
 ##########################################################################################
 
 def main(args: list[str]) -> int:
-    tempdir = TemporaryDirectory(prefix='/tmp/')
+    '''
+    Main function.
 
-    output_file = pjoin(tempdir.name, 'output.png')
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
 
     try:
-        _makelock(tempdir.name, output_file)
-        lock_args = ['/usr/bin/swaylock', '-f', '-s', 'fill', '-i', output_file]
+        fancylock()
 
-    except Exception:
-        lock_args = ['/usr/bin/swaylock', '-f']
+    except Exception as exc:
+        print(f'error: failed to fancy lock: {exc}', file=sys.stderr)
 
-    prun(lock_args, check=True)
+        return 1
 
     return 0
 

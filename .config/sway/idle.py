@@ -8,58 +8,71 @@
 
 import sys
 
-from os.path import expanduser
-from subprocess import run as prun
+from pathlib import Path
 
+from i3ipc import Connection as I3Connection
 
-##########################################################################################
-# Constants
-##########################################################################################
+local_path = Path('~/local/bin')
+sys.path.append(local_path.expanduser().as_posix())
 
-_swaymsg_args = 'output eDP-1 power {}'
-
-_idle_lock_args = [expanduser('~/local/bin/fancylock.py')]
+from fancylock import fancylock
 
 
 ##########################################################################################
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
+def _usage(app: str) -> None:
     print(f'Usage: {app} --lock|--display-on|--display-off', file=sys.stdout)
     print('Wrapper script for swayidle operations.', file=sys.stdout)
 
-def _idle_lock() -> int:
-    p = prun(_idle_lock_args)
+def _output_power(state: bool) -> None:
+    conn = I3Connection()
 
-    return p.returncode
+    output_names: list[str] = list()
 
-def _idle_display(state: bool) -> int:
-    idle_display_args = ['swaymsg', _swaymsg_args.format('on' if state else 'off')]
-    p = prun(idle_display_args)
+    for output in conn.get_outputs():
+        name = output.ipc_data.get('name')
+        if name is not None:
+            output_names.append(name)
 
-    return p.returncode
+    for name in output_names:
+        cmd = 'output {0} power {1}'.format(name, 'on' if state else 'off')
+
+        response = conn.command(cmd)
+        if len(response) != 1 or not response[0].success:
+            raise RuntimeError('failed to change output power')
 
 
 ##########################################################################################
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     if len(args) < 2:
         _usage(args[0])
         return 1
 
-    if args[1] == '--lock':
-        ret = _idle_lock()
-    elif args[1] == '--display-on':
-        ret = _idle_display(True)
-    elif args[1] == '--display-off':
-        ret = _idle_display(False)
-    else:
-        ret = 2
+    cmd = args[1]
 
-    return ret
+    try:
+        if cmd == '--lock':
+            fancylock()
+        elif cmd == '--display-on':
+            _output_power(True)
+        elif cmd == '--display-off':
+            _output_power(False)
+        else:
+            print(f'error: invalid command: {cmd}', file=sys.stderr)
+
+            return 1
+
+    except Exception as exc:
+        print(f'error: failed to perform command: {cmd}: {exc}', file=sys.stderr)
+
+        return 2
+
+    return 0
 
 if __name__ == '__main__':
     sys.exit(main(sys.argv))

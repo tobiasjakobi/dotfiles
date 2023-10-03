@@ -15,7 +15,7 @@ import sys
 
 from argparse import ArgumentParser
 from pathlib import Path
-from subprocess import run as prun
+from subprocess import DEVNULL, run as prun
 from tempfile import TemporaryDirectory
 
 from vc_addtag import TagEntry, vc_addtag
@@ -59,7 +59,9 @@ def vc_multi_tag(path: Path, tag_key: str) -> int:
     with TemporaryDirectory(prefix='/tmp/') as tmp:
         input_path = Path(tmp) / Path('input.txt')
 
-        prun([_editor, '--standalone', input_path.as_posix()], check=True)
+        p_args = (_editor, '--standalone', input_path.as_posix())
+
+        prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
         tag_values = input_path.read_text(encoding='utf-8').splitlines()
 
@@ -81,12 +83,12 @@ def main(args: list[str]) -> int:
         args - list of string arguments from the CLI
     '''
 
-    parser = ArgumentParser(description='Copy VorbisComment and picture metadata.')
+    parser = ArgumentParser(description='Apply tag values (for the same tag key) to multiple files.')
 
     parser.add_argument('-d', '--directory', help='Directory where tags should be applied')
     parser.add_argument('-t', '--tag-key', help='Key of the tag', required=True)
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     if parsed_args.tag_key is not None:
         if parsed_args.directory is None:

@@ -12,7 +12,7 @@ from magic import Magic
 from multiprocessing import Pool
 from pathlib import Path
 from shutil import move
-from subprocess import CalledProcessError, run as prun
+from subprocess import DEVNULL, CalledProcessError, run as prun
 from tempfile import TemporaryDirectory
 
 from common_util import StandardOutputProtector, path_walk
@@ -47,8 +47,8 @@ def _decode_verify(input: Path, output: Path):
     decode_fail = False
 
     try:
-        p_args = ['flac', '--decode', '--totally-silent', f'--output-name={output.as_posix()}', input.as_posix()]
-        prun(p_args, check=True, capture_output=True, encoding='utf-8')
+        p_args = ('flac', '--decode', '--totally-silent', f'--output-name={output.as_posix()}', input.as_posix())
+        prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     except CalledProcessError:
         decode_fail = True
@@ -62,8 +62,8 @@ def _decode_verify(input: Path, output: Path):
     err_msg = None
 
     try:
-        p_args = ['flac', '--decode', '--decode-through-errors', '--totally-silent', f'--output-name={output.as_posix()}', input.as_posix()]
-        prun(p_args, check=True, capture_output=True, encoding='utf-8')
+        p_args = ('flac', '--decode', '--decode-through-errors', '--totally-silent', f'--output-name={output.as_posix()}', input.as_posix())
+        prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     except CalledProcessError as err:
         err_msg = f'{err}: {err.stderr}'
@@ -158,6 +158,13 @@ def reflac_dir(path: Path, verbose: bool):
 ##########################################################################################
 
 def main(args: list[str]) -> int:
+    '''
+    Main function.
+
+    Arguments:
+        args - list of string arguments from the CLI
+    '''
+
     if len(args) < 2:
         _usage(args[0])
         return 0

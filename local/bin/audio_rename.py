@@ -334,7 +334,7 @@ def main(args: list[str]) -> int:
 
     parser.add_argument('-d', '--directory', required=True, help='Directory where we look for audio files')
 
-    parsed_args = parser.parse_args()
+    parsed_args = parser.parse_args(args[1:])
 
     if parsed_args.directory is not None:
         directory = Path(parsed_args.directory)
