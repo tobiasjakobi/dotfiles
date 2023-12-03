@@ -30,6 +30,7 @@ _config_path_template = Path('~/.config/pulseserver_wrap.conf')
 _flatpak_args_template = ('/usr/bin/flatpak', 'run', '--branch=stable', '--arch=x86_64', '--filesystem=home', '--command={0}')
 _env_helper_template = Path('~/local/bin/flatpak_env_helper.sh')
 _logfile_template = Path('~/local/log')
+_pulsefake_template = Path('~/local/pulsefake')
 
 
 ##########################################################################################
@@ -93,6 +94,7 @@ class ConfigArguments:
     Dataclass encoding the configuration supplied via CLI arguments.
 
     flatpak       - Are we wrapping a FlatPak application?
+    quirks        - List of quirks to apply (pulsefake)
     affinity      - CPU affinity setting (see the enumerator for details)
     print_log     - Print the log of the application?
     dxvk_config   - DXVK config alias
@@ -101,6 +103,7 @@ class ConfigArguments:
     '''
 
     flatpak: bool
+    quirks: list[str]
     affinity: CPUAffinity
     print_log: bool
     dxvk_config: str
@@ -207,6 +210,19 @@ def pulseserver_wrap(config_args: ConfigArguments) -> None:
 
     p_env = None
 
+    if config_args.quirks is not None:
+        if 'pulsefake' in config_args.quirks:
+            '''
+            Apply the PulseAudio fake quirks that is needed for
+            older versions of the FMOD library.
+            '''
+            if p_env is None:
+                p_env = environ.copy()
+
+            pulsefake = _pulsefake_template.expanduser()
+            if pulsefake.is_dir():
+                p_env['PATH'] = pulsefake.as_posix() + ':' + p_env['PATH']
+
     if _is_server_available(pulse_server):
         print(f'info: pulse server available: {pulse_server}', file=sys.stdout)
 
@@ -304,6 +320,7 @@ def main(args: list[str]) -> int:
     parser = ArgumentParser()
 
     parser.add_argument('-f', '--flatpak', action='store_true', help='Are we wrapping a flatpak application?')
+    parser.add_argument('-q', '--quirks', help='Apply any quirks? Quirks are comma-separated (pulsefake)')
     parser.add_argument('-a', '--affinity', choices=('single', 'physical'), help='Should we set the CPU affinity when launching the application?')
     parser.add_argument('-p', '--print-log', action='store_true', help='Should we print the log of the application?')
     parser.add_argument('-d', '--dxvk-config', help='DXVK config which should be used')
@@ -313,6 +330,7 @@ def main(args: list[str]) -> int:
 
     config = ConfigArguments(
         parsed_args.flatpak,
+        None if parsed_args.quirks is None else parsed_args.quirks.split(','),
         CPUAffinity.from_string(parsed_args.affinity),
         parsed_args.print_log,
         parsed_args.dxvk_config,

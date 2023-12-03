@@ -82,10 +82,12 @@ exec swayidle -w \
 ### Input configuration
 ######################################################################################################
 
-# Disable all keyboard, pointer and switch devices by default
+# Disable most input type devices by default
 input type:keyboard events disabled
 input type:pointer events disabled
 input type:switch events disabled
+input type:touchpad events disabled
+input type:touch events disabled
 
 input "2:14:ETPS/2_Elantech_Touchpad" {
     events enabled

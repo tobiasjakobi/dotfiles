@@ -15,7 +15,7 @@ from multiprocessing import Pool
 from os.path import basename, dirname, exists, isdir, isfile, realpath, splitext, join as pjoin
 from os import listdir, rename, remove
 from re import compile as rcompile
-from subprocess import CalledProcessError, run as prun
+from subprocess import DEVNULL, CalledProcessError, run as prun
 from tempfile import NamedTemporaryFile
 
 
@@ -253,7 +253,7 @@ def sha_scan(arg, out, external_list) -> int:
     p_args = ['sha256deep', '-b', '-z'] + filelist
 
     try:
-        prun(p_args, cwd=input_path, check=True, stdout=output)
+        prun(p_args, cwd=input_path, check=True, stdin=DEVNULL, stdout=output)
 
     except CalledProcessError as err:
         print(f'error: sha256deep returned with error: {err.returncode}', file=sys.stderr)
@@ -334,7 +334,7 @@ def sfv_check(arg) -> int:
     p_args = (_cksfv, '-q', '-f', filebase)
 
     try:
-        prun(p_args, cwd=working, check=True)
+        prun(p_args, cwd=working, check=True, stdin=DEVNULL)
 
     except CalledProcessError as err:
         print(f'error: sfv_check: cksfv returned with error: {err.returncode}', file=sys.stderr)
@@ -371,7 +371,7 @@ def md5_check(arg) -> int:
     p_args = ['md5deep', '-s', '-x', filebase] + filelist
 
     try:
-        prun(p_args, cwd=working, check=True)
+        prun(p_args, cwd=working, check=True, stdin=DEVNULL)
 
     except CalledProcessError as err:
         print(f'error: md5_check: process returned with error: {err.returncode}', file=sys.stderr)

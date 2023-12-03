@@ -86,7 +86,7 @@ def _html_escape2(input: str) -> str:
     if input is None:
         return None
 
-    return html_escape(input)
+    return html_escape(input, quote=False)
 
 def _is_host_available(cfg: MPDConfig) -> bool:
     '''

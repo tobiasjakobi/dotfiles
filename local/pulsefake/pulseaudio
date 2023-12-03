@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+
+# Older libfmod libraries check for the existence of the PulseAudio daemon
+# by calling pulseaudio --check. This doesn't work if e.g. PipeWire is
+# providing the PA socket.
+function pulsefake {
+  local cmd
+
+  if [[ -z "${1}" ]]; then
+    echo "error: missing command argument"
+
+    return 1
+  fi
+
+  cmd="${1}"
+
+  case "${1}" in
+    "--check" )
+      echo "info: faking PulseAudio daemon check"
+
+      return 0 ;;
+
+    * )
+      echo "error: invalid command argument: ${cmd}"
+
+      return 2 ;;
+  esac
+}
+
+pulsefake "$@"

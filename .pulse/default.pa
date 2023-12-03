@@ -45,6 +45,12 @@ load-module module-zeroconf-discover
 ### Load several protocols
 load-module module-native-protocol-unix
 
+### Load RTP module for sender side
+# TODO: Should be loaded on demand and only when we have the source IP
+#       and the destination IP has PulseAudio running.
+#load-module module-null-sink sink_name=rtp format=s16be channels=2 rate=44100 sink_properties=device.description=RTP
+#load-module module-rtp-send source=rtp.monitor source_ip=192.168.0.100 destination_ip=192.168.0.101
+
 ### Network access (may be configured with paprefs, so leave this commented
 ### here if you plan to use paprefs)
 load-module module-native-protocol-tcp
