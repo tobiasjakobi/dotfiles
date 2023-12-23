@@ -11,7 +11,7 @@ function _get_merge_base {
 }
 
 function manage_kernel {
-    local version="6.5.y"
+    local version="6.6.y"
 
     local upstream_remote="stable"
     local upstream_branch="linux-${version}"

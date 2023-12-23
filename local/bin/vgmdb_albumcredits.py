@@ -22,12 +22,7 @@ from dataclasses import dataclass
 from enum import IntEnum, unique
 from itertools import pairwise
 from pathlib import Path
-# TODO: make use of Generic and TypeVar
-from typing import Any, Generator, Generic, TypeVar
-
-
-# TODO: where to put this?
-T = TypeVar('T')
+from typing import Generator, TypeVar
 
 
 ##########################################################################################
@@ -74,7 +69,7 @@ class ArtistEntry:
     '''
     An artist credit entry.
 
-    value - the artist name
+    names - list of artist names (list can be empty)
     '''
 
     names: list[str]
@@ -82,21 +77,31 @@ class ArtistEntry:
     @staticmethod
     def make(value: str) -> ArtistEntry:
         '''
-        Format an artist entry.
+        Construct an artist entry from a raw artist value.
 
         Arguments:
             value - the artist value
         '''
 
-        names = _split_names(value)
+        names = _split_into_names(value)
         if not names:
             raise RuntimeError('invalid artist entry')
 
         return ArtistEntry(names)
 
+    def __str__(self) -> str:
+        pretty = _pretty_names(self.names)
+
+        return f'Artist({repr(pretty)})'
+
     def fixup(self, post_rules: dict[str, str]) -> ArtistEntry:
         '''
-        TODO: desc
+        Apply fixup rules to an artist entry.
+
+        Arguments:
+            post_rules - post fixup rules to apply
+
+        Returns a new (fixed up) artist entry.
         '''
 
         names = self.names.copy()
@@ -107,15 +112,12 @@ class ArtistEntry:
 
     def is_empty(self) -> bool:
         '''
-        TODO: desc
+        Check if the artist entry is empty.
+
+        Returns True if the list of artist names belong to the entry is empty.
         '''
 
         return len(self.names) == 0
-
-    def __str__(self) -> str:
-        pretty = _pretty_names(self.names)
-
-        return f'Artist({repr(pretty)})'
 
 @dataclass(frozen=True, repr=False)
 class ComposerEntry:
@@ -123,7 +125,7 @@ class ComposerEntry:
     A composer credit entry.
 
     function - the composer function
-    names    - the composer names
+    names    - list of composer names (list can be empty)
     '''
 
     function: str
@@ -141,30 +143,35 @@ class ComposerEntry:
         'Lyricist': 'Lyrics',
     }
 
-    def __str__(self) -> str:
-        pretty = _pretty_names(self.names) + f' ({self.function})'
-
-        return f'Composer({repr(pretty)})'
-
     @staticmethod
     def make(value: str, idx: int) -> ComposerEntry:
         '''
-        Format a composer entry.
+        Construct a composer entry from a raw composer value.
 
         Arguments:
             value - the composer value
             idx   - index into the composer keys
         '''
 
-        names = _split_names(value)
+        names = _split_into_names(value)
         if not names:
             raise RuntimeError('invalid composer entry')
 
         return ComposerEntry(ComposerEntry.keys[idx], names)
 
+    def __str__(self) -> str:
+        pretty = _pretty_names(self.names) + f' ({self.function})'
+
+        return f'Composer({repr(pretty)})'
+
     def fixup(self, post_rules: dict[str, str]) -> ComposerEntry:
         '''
-        TODO: desc
+        Apply fixup rules to a composer entry.
+
+        Arguments:
+            post_rules - post fixup rules to apply
+
+        Returns a new (fixed up) composer entry.
         '''
 
         f = ComposerEntry.fixup_map.get(self.function)
@@ -178,7 +185,9 @@ class ComposerEntry:
 
     def is_empty(self) -> bool:
         '''
-        TODO: desc
+        Check if the composer entry is empty.
+
+        Returns True if the list of composer names belong to the entry is empty.
         '''
 
         return len(self.names) == 0
@@ -189,7 +198,7 @@ class PerformerEntry:
     A performer credit entry.
 
     function - the performer function
-    names    - the performer names
+    names    - list of performer names (list can be empty)
     '''
 
     function: str
@@ -233,6 +242,18 @@ class PerformerEntry:
         'Choir': '',
     }
 
+    @staticmethod
+    def make(value: str, idx: int) -> PerformerEntry:
+        '''
+        Construct a performer entry from a raw performer value.
+
+        Arguments:
+            value - the performer value
+            idx   - index into the performer keys
+        '''
+
+        return PerformerEntry(PerformerEntry.keys[idx], _split_into_names(value))
+
     def __str__(self) -> str:
         pretty = _pretty_names(self.names)
         if pretty is None:
@@ -242,21 +263,14 @@ class PerformerEntry:
 
         return f'Performer({repr(pretty)})'
 
-    @staticmethod
-    def make(value: str, idx: int) -> PerformerEntry:
-        '''
-        Format a performer entry.
-
-        Arguments:
-            value - the performer value
-            idx   - index into the performer keys
-        '''
-
-        return PerformerEntry(PerformerEntry.keys[idx], _split_names(value))
-
     def fixup(self, post_rules: dict[str, str]) -> PerformerEntry:
         '''
-        TODO: desc
+        Apply fixup rules to a composer entry.
+
+        Arguments:
+            post_rules - post fixup rules to apply
+
+        Returns a new (fixed up) composer entry.
         '''
 
         function = self.function
@@ -276,7 +290,9 @@ class PerformerEntry:
 
     def is_empty(self) -> bool:
         '''
-        TODO: desc
+        Check if the performer entry is empty.
+
+        Returns True if the list of performer names belong to the entry is empty.
         '''
 
         return len(self.names) == 0
@@ -287,7 +303,7 @@ class CommentEntry:
     A comment credit entry.
 
     function - the comment function
-    names    - the comment names
+    names    - list of comment names (list can be empty)
 
     The field :function: can be None if this is an unstructured entry.
     Unstructured entries always have a :names: list of length one.
@@ -303,11 +319,6 @@ class CommentEntry:
         'Co-produced by': 'Co-Producer',
         'Produced by': 'Producer',
     }
-
-    def __str__(self) -> str:
-        pretty = f'{self.function}: {_pretty_names(self.names)}'
-
-        return f'Comment({repr(pretty)})'
 
     @staticmethod
     def make_unstructed(line: str) -> CommentEntry:
@@ -332,11 +343,21 @@ class CommentEntry:
             value - the comment value
         '''
 
-        return CommentEntry(key, _split_names(value))
+        return CommentEntry(key, _split_into_names(value))
+
+    def __str__(self) -> str:
+        pretty = f'{self.function}: {_pretty_names(self.names)}'
+
+        return f'Comment({repr(pretty)})'
 
     def fixup(self, post_rules: dict[str, str]) -> CommentEntry:
         '''
-        TODO: desc
+        Apply fixup rules to a comment entry.
+
+        Arguments:
+            post_rules - post fixup rules to apply
+
+        Returns a new (fixed up) comment entry.
         '''
 
         if self.function is not None:
@@ -353,13 +374,30 @@ class CommentEntry:
 
     def is_empty(self) -> bool:
         '''
-        TODO: desc
+        Check if the comment entry is empty.
+
+        Returns True if the list of comment names belong to the entry is empty.
         '''
 
         return len(self.names) == 0
 
+    def is_unstructured(self) -> bool:
+        '''
+        Check if the comment entry is unstructured.
+        '''
+
+        return self.function is None
+
 @dataclass(frozen=True)
 class BlockHeader:
+    '''
+    Header of a credit block.
+
+    discnumber  - discnumber of the credited track
+    tracknumber - tracknumber of the credited track
+    trackname   - trackname of the credited track (optional, i.e. can be None)
+    '''
+
     discnumber: int
     tracknumber: int
     trackname: str
@@ -367,25 +405,47 @@ class BlockHeader:
     @staticmethod
     def from_line(line: str) -> BlockHeader:
         '''
-        TODO: desc
+        Construct a block header from a raw line.
+
+        Arguments:
+            line - raw input line
+
+        Returns None if the raw line does not encode a valid block header.
         '''
 
         try:
             prefix, trackname = line.split(' ', maxsplit=1)
 
         except ValueError:
-            return None
+            '''
+            If the spliting fails, assume that we don't have a trackname.
+            '''
+            prefix = line
+            trackname = None
 
-        try:
-            first, second = prefix.split('.', maxsplit=1)
+        tracknumber = None
 
-            discnumber = int(first)
-            tracknumber = int(second)
+        for separator in ('.', '-'):
+            if separator in prefix:
+                try:
+                    first, second = prefix.split(separator, maxsplit=1)
 
-        except ValueError:
-            return None
+                    discnumber = int(first)
+                    tracknumber = int(second)
 
-        if discnumber <= 0 or discnumber >= 30:
+                except ValueError:
+                    pass
+
+        if tracknumber is None:
+            discnumber = None
+
+            try:
+                tracknumber = int(prefix)
+
+            except ValueError:
+                return None
+
+        if discnumber is not None and (discnumber <= 0 or discnumber >= 30):
             return None
 
         if tracknumber <= 0 or tracknumber >= 99:
@@ -396,10 +456,23 @@ class BlockHeader:
     @staticmethod
     def is_header(line: str) -> bool:
         '''
-        TODO: desc
+        Check if the raw line encodes a valid block header.
+
+        Arguments:
+            line - raw input line
         '''
 
         return BlockHeader.from_line(line) is not None
+
+
+##########################################################################################
+# Type definitions
+##########################################################################################
+
+'''
+Define a generic entry type, that covers the artist/composer/performer/comment entry.
+'''
+GenericEntryType = TypeVar('GenericEntryType', ArtistEntry, ComposerEntry, PerformerEntry, CommentEntry)
 
 
 ##########################################################################################
@@ -408,7 +481,7 @@ class BlockHeader:
 
 class CreditBlock:
     '''
-    TODO: desc
+    Block of track credit information.
     '''
 
     _post_fixup_map = {
@@ -424,7 +497,7 @@ class CreditBlock:
     )
 
     @staticmethod
-    def get_type(line: str) -> tuple[LineType, Any]:
+    def get_type(line: str) -> tuple[LineType, GenericEntryType]:
         '''
         Get the type of a line of the credit block.
 
@@ -476,10 +549,8 @@ class CreditBlock:
 
     def __str__(self) -> str:
         '''
-        Format credit block as a human-readable string.
+        Format credit block as human-readable output.
         '''
-
-        # TODO: we should use the merged stuff here
 
         artist = [f'\t{a}' for a in self._artist]
         composer = [f'\t{c}' for c in self._composer]
@@ -492,7 +563,10 @@ class CreditBlock:
 
     def parse(self, line: str) -> None:
         '''
-        TODO: desc
+        Parse a line and add the information to the credit block.
+
+        Arguments:
+            line - the input line to parse
         '''
 
         line_type, result = CreditBlock.get_type(line)
@@ -510,7 +584,9 @@ class CreditBlock:
 
     def merge(self) -> None:
         '''
-        TODO: desc
+        Merge the information stored in the credit block.
+
+        This also applies various fixup operations to the information.
         '''
 
         fixup_map = CreditBlock._post_fixup_map.copy()
@@ -530,7 +606,7 @@ class CreditBlock:
         self._performer = _merge_entries_generic(fixed_performer)
         self._comment = _merge_entries_generic(fixed_comment)
 
-    def get_functions(self, entry_type: Any) -> list[str]:
+    def get_functions(self, entry_type: GenericEntryType) -> list[str]:
         '''
         Get the list of functions from this credit block for a given entry type.
 
@@ -551,21 +627,27 @@ class CreditBlock:
 
 class AlbumCreditsParser:
     '''
-    TODO: desc
+    Flexible parser for track credits belonging to music albus.
     '''
 
-    def __init__(self, lines: list[str]) -> None:
+    def __init__(self, lines: list[str], verbose: bool) -> None:
         '''
         Constructor.
 
         Arguments:
-            lines - the album credit lines the parser should work on
+            lines   - the album credit lines the parser should work on
+            verbose - should we enable verbose printing?
         '''
 
         if lines is None or len(lines) == 0:
             raise RuntimeError('invalid lines argument')
 
+        '''
+        We make a copy here since we modify the list.
+        '''
         self._line_storage: list[str] = lines.copy()
+
+        self._verbose = verbose
         self._state: ParsingState = ParsingState.SearchingBlock
         self._new_block: CreditBlock = None
         self._blocks: list[CreditBlock] = list()
@@ -589,12 +671,23 @@ class AlbumCreditsParser:
         if len(self._line_storage) == 0:
             return None
 
-        return self._line_storage.pop(0)
+        ret = self._line_storage.pop(0)
+
+        if self._verbose:
+            print(f'info: consuming line: {ret}', file=sys.stdout)
+
+        return ret
 
     def parse(self) -> bool:
         '''
-        TODO: desc
+        Consume a line from the line storage and parse it.
+
+        Returns True if there are more lines to parse.
+        Returns False if parsing is done.
         '''
+
+        if self._verbose:
+            print(f'info: parsing state: {self._state.name}', file=sys.stdout)
 
         if self._state == ParsingState.SearchingBlock:
             current_line = self._consume_line()
@@ -626,14 +719,14 @@ class AlbumCreditsParser:
 
             return False
 
-    def merge(self) -> bool:
+    def merge(self) -> None:
         '''
-        TODO: desc
+        Merge all currently managed credit blocks.
         '''
 
         list(map(lambda b: b.merge(), self._blocks))
 
-    def get_functions(self, entry_type: Any) -> list[str]:
+    def get_functions(self, entry_type: GenericEntryType) -> list[str]:
         '''
         Get the list of functions from all credit blocks for a given entry type.
 
@@ -647,13 +740,19 @@ class AlbumCreditsParser:
 
         return list(functions)
 
+
 ##########################################################################################
 # Internal Functions
 ##########################################################################################
 
 def _escaped_split(line: str) -> list[str]:
     '''
-    TODO: desc
+    Split a line by comma with escape handling (regular braces are handled).
+
+    Arguments:
+        line - input line that we want to split
+
+    Returns a list of strings.
     '''
 
     parts: list[str] = list()
@@ -681,7 +780,10 @@ def _escaped_split(line: str) -> list[str]:
 
 def _pretty_names(names: list[str]) -> str:
     '''
-    TODO: desc
+    Pretty format a names list.
+
+    Arguments:
+        names - list of input names
     '''
 
     if len(names) == 0:
@@ -692,9 +794,14 @@ def _pretty_names(names: list[str]) -> str:
 
     return ', '.join(names[0:-1]) + ' and ' + names[-1]
 
-def _split_names(value: str) -> list[str]:
+def _split_into_names(value: str) -> list[str]:
     '''
-    TODO: desc
+    Split a generic value string into a list of names.
+
+    Arguments:
+        value - input value string
+
+    Returns an empty list if the value string is empty.
     '''
 
     if len(value) == 0:
@@ -705,9 +812,17 @@ def _split_names(value: str) -> list[str]:
 
     return list(map(lambda x: x.strip(), _escaped_split(value)))
 
-def _partition_by_entries(entries: list[T], partition_entries: list[T]) -> Generator[list[T]]:
+def _partition_by_entries(entries: list[GenericEntryType], partition_entries: list[GenericEntryType]) -> Generator[list[GenericEntryType]]:
     '''
-    TODO: desc
+    Partition a list of entries using another list containg the partition points.
+
+    Arguments:
+        entries           - the input list of (generic) entries
+        partition_entries - the list of entries used to create partition points
+
+    Returns a generator that generates contiguous sublists of :entries: by locating
+    each element of :partition_entries: in :entries: and using the resulting
+    indices as partition points.
     '''
 
     if not partition_entries:
@@ -721,20 +836,28 @@ def _partition_by_entries(entries: list[T], partition_entries: list[T]) -> Gener
         for i, j in pairwise(sorted(list(part_indices))):
             yield entries[i:j]
 
-def _merge_entries_generic(entries: list[Any]) -> list[Any]:
+def _merge_entries_generic(entries: list[GenericEntryType]) -> list[GenericEntryType]:
     '''
+    Merge a list of entries.
+
+    Arguments:
+        entries - the input list of (generic) entries
+
     TODO: desc
     '''
 
     if len(entries) == 0:
         return list()
 
-    entry_type = type(entries[0])
+    '''
+    We assume that all elements of our entries list have the same type.
+    '''
+    EntryType = type(entries[0])
 
     empty_entries = list(filter(lambda e: e.is_empty(), entries))
     partitions = _partition_by_entries(entries, empty_entries)
 
-    def _merge_by_function(entries: list[entry_type], function: str) -> entry_type:
+    def _merge_by_function(entries: list[EntryType], function: str) -> EntryType:
         '''
         TODO: desc
         '''
@@ -743,9 +866,9 @@ def _merge_entries_generic(entries: list[Any]) -> list[Any]:
 
         merged_names = [n for entry in matching_entries for n in entry.names]
 
-        return entry_type(function, merged_names)
+        return EntryType(function, merged_names)
 
-    result = list()
+    result: list[EntryType] = list()
 
     for part in partitions:
         if part[0].is_empty():
@@ -765,26 +888,34 @@ def _merge_entries_generic(entries: list[Any]) -> list[Any]:
 # Functions
 ##########################################################################################
 
-def vgmdb_albumcredits(path: Path) -> None:
+def vgmdb_albumcredits(directory_path: Path, credits_path: Path, verbose: bool) -> None:
     '''
     Apply VGMdb album credits to FLAC files in a given directory.
 
     Arguments:
-        path - path to the directory which we should process
+        directory_path - path to the directory which we should process
+        credits_path   - path to the credits file that serves as input
+        verbose        - should we enable verbose printing?
     '''
 
-    lines = path.read_text(encoding='utf-8').splitlines()
+    # TODO: do something with directory_path
 
-    credits_parser = AlbumCreditsParser(lines)
+    lines = credits_path.read_text(encoding='utf-8').splitlines()
+
+    credits_parser = AlbumCreditsParser(lines, verbose)
 
     while credits_parser.parse():
         pass
 
     credits_parser.merge()
 
-    #print(credits_parser.get_functions(CommentEntry))
+    if verbose:
+        print('info: printing verbose function information:', file=sys.stdout)
 
-    print(credits_parser, file=sys.stdout)
+        for arg in (ComposerEntry, PerformerEntry, CommentEntry):
+            print(f'\tFunctions for {arg.__name__}: {credits_parser.get_functions(arg)}', file=sys.stdout)
+
+    #print(credits_parser, file=sys.stdout)
 
 
 ##########################################################################################
@@ -802,25 +933,26 @@ def main(args: list[str]) -> int:
     parser = ArgumentParser(description='Copy VorbisComment and picture metadata.')
 
     parser.add_argument('-d', '--directory', help='Directory where tags should be applied', required=True)
-    parser.add_argument('-c', '--credits-file', help='TODO', required=True)
+    parser.add_argument('-c', '--credits-file', help='File containing the input credits', required=True)
+    parser.add_argument('-v', '--verbose', action='store_true', help='Should we enable verbose printing?')
 
     parsed_args = parser.parse_args(args[1:])
 
     if parsed_args.directory is not None and parsed_args.credits_file is not None:
-        directory = Path(parsed_args.directory)
-        if not directory.is_dir():
-            print(f'error: path is not a directory: {directory}', file=sys.stderr)
+        directory_path = Path(parsed_args.directory)
+        if not directory_path.is_dir():
+            print(f'error: path is not a directory: {directory_path}', file=sys.stderr)
 
             return 1
 
-        credits_file = Path(parsed_args.credits_file)
-        if not directory.is_dir():
-            print(f'error: path is not a file: {credits_file}', file=sys.stderr)
+        credits_path = Path(parsed_args.credits_file)
+        if not credits_path.is_file():
+            print(f'error: invalid credits file: {credits_path}', file=sys.stderr)
 
             return 2
 
         try:
-            vgmdb_albumcredits(credits_file)
+            vgmdb_albumcredits(directory_path, credits_path, parsed_args.verbose)
 
         except Exception as exc:
             print(f'error: failed to apply album credits: {exc}', file=sys.stderr)
