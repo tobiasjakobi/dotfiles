@@ -10,10 +10,10 @@ import sys
 
 from argparse import ArgumentParser
 from enum import IntEnum
-from magic import Magic
 from pathlib import Path
 from typing import Any
 
+from magic import Magic
 from mutagen import MutagenError
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4

@@ -55,14 +55,14 @@ set $exitmsg 'You pressed the exit shortcut. Do you really want to exit sway? Th
 output $primary_output {
     background /usr/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
     resolution 1920x1080
-    position 0,0
+    position 0 0
     subpixel rgb
 }
 
 output $secondary_output {
     background #808080 solid_color
     resolution 1920x1080
-    position 1920,0
+    position 1920 0
     disable
 }
 
@@ -349,14 +349,12 @@ bar {
     swaybar_command waybar
 }
 
-
 include /etc/sway/config.d/*
 
 
 ######################################################################################################
 ### Other setup
 ######################################################################################################
-
 
 # Notification daemon
 exec mako

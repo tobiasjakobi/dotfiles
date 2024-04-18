@@ -6,7 +6,7 @@
 # Imports
 ##########################################################################################
 
-from os.path import isfile
+from pathlib import Path
 
 from magic import Magic
 from mutagen.flac import FLAC
@@ -27,13 +27,13 @@ _switcher = {
 # Functions
 ##########################################################################################
 
-def gettag(input_path: str, tags: list[str]) -> list[str]:
+def gettag(path: Path, tags: list[str]) -> list[str]:
     '''
     Get a number of tag values from a given file.
 
     Arguments:
-        input_path - path to the file used as input
-        tags       - list of tag keys
+        path - path to the file used as input
+        tags - list of tag keys
 
     Returns a list of strings, containing the values corresponding
     to the given tag keys.
@@ -44,25 +44,27 @@ def gettag(input_path: str, tags: list[str]) -> list[str]:
 
     mime = Magic(mime=True)
 
-    if not isfile(input_path):
-        raise RuntimeError(f'input path not found: {input_path}')
+    if not path.is_file():
+        raise RuntimeError(f'input path not found: {path}')
 
-    input_type = mime.from_file(input_path)
+    input_type = mime.from_file(path.as_posix())
 
     audiotype = _switcher.get(input_type, None)
     if audiotype is None:
         raise RuntimeError(f'input has unsupported type: {input_type}')
 
     try:
-        audio = audiotype(input_path)
+        audio = audiotype(path.as_posix())
 
     except Exception as exc:
         raise RuntimeError(f'failed to open file: {exc}') from exc
 
-    ret = []
+    ret: list[str] = list()
 
     for _t in tags:
-        _v = audio.tags[_t] if _t in audio.tags else None
+        _v = None
+        if _t in audio.tags:
+            _v = audio.tags[_t]
 
         if _v is not None:
             if len(_v) != 1:

@@ -17,7 +17,6 @@ from subprocess import run as prun
 from i3ipc import Connection as I3Connection
 
 
-
 ##########################################################################################
 # Enumerator definitions
 ##########################################################################################
@@ -153,7 +152,7 @@ _external_output = 'DP-2'
 # Internal functions
 ##########################################################################################
 
-def _usage(app: str):
+def _usage(app: str) -> None:
     print(f'Usage: {app} <media URL> [optional image filename]', file=sys.stdout)
 
     msg = '''
@@ -220,7 +219,7 @@ def playmedia(input_url: str, device_path: Path) -> None:
     else:
         input_type = InputType.Other
 
-    profiles = []
+    profiles: list[str] = list()
 
     for desc in _config_descriptors:
         desc.process(profiles)

@@ -8,12 +8,13 @@
 
 import sys
 
-from magic import Magic
 from multiprocessing import Pool
 from pathlib import Path
 from shutil import move
 from subprocess import DEVNULL, run as prun
 from tempfile import TemporaryDirectory
+
+from magic import Magic
 
 from audio_compare import audio_compare
 from common_util import StandardOutputProtector, path_walk

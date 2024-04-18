@@ -12,10 +12,11 @@ import sys
 
 from argparse import ArgumentParser
 from dataclasses import dataclass
-from magic import Magic
 from pathlib import Path
 from subprocess import DEVNULL, CalledProcessError, run as prun
 from xml.dom.minidom import Element as XMLElement, parseString as xml_parse
+
+from magic import Magic
 
 from id3_addtag import is_mp3, id3_addtag
 from mp4_addtag import mp4_addtag
@@ -98,7 +99,7 @@ def bs1770gain(path: Path) -> None:
         p = prun(p_args, check=True, stdin=DEVNULL, capture_output=True, encoding='utf-8')
 
     except CalledProcessError as err:
-        raise RuntimeError('bs1770gain CLI failed: {err}') from err
+        raise RuntimeError(f'bs1770gain CLI failed: {err}') from err
 
     try:
         dom_tree = xml_parse(p.stdout)
@@ -114,7 +115,7 @@ def bs1770gain(path: Path) -> None:
         summary = main_node
 
     except Exception as exc:
-        raise RuntimeError('bs1770gain XML parsing failed: {exc}') from exc
+        raise RuntimeError(f'bs1770gain XML parsing failed: {exc}') from exc
 
     album_info = R128Tuple.from_track(summary)
     if album_info is None:

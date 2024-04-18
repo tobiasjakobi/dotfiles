@@ -8,9 +8,9 @@
 
 import sys
 
-from magic import Magic
 from pathlib import Path
 
+from magic import Magic
 from mutagen.flac import FLAC
 from mutagen.oggvorbis import OggVorbis
 

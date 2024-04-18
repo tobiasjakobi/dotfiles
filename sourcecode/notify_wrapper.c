@@ -1,6 +1,6 @@
 /*
-* gcc -lsystemd -O2 -o notify_wrapper notify_wrapper.c
-*/
+ * gcc -lsystemd -O2 -o notify_wrapper notify_wrapper.c
+ */
 
 #include <systemd/sd-login.h>
 #include <unistd.h>

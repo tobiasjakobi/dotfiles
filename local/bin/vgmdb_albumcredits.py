@@ -24,6 +24,13 @@ from itertools import pairwise
 from pathlib import Path
 from typing import Generator, TypeVar
 
+from magic import Magic
+
+from common_util import path_walk
+from flac_encode import is_flac
+from vc_addtag import TagEntry, vc_addtag
+from vc_helper import gettag
+
 
 ##########################################################################################
 # Enumerator definitions
@@ -63,6 +70,39 @@ class LineType(IntEnum):
 ##########################################################################################
 # Dataclass definitions
 ##########################################################################################
+
+@dataclass(frozen=True)
+class TrackIndexKey:
+    '''
+    Helper class functioning as index key for a audio track.
+
+    discnumber  - discnumber of the track
+    tracknumber - tracknumber of the track
+    '''
+
+    discnumber: int
+    tracknumber: int
+
+    @staticmethod
+    def from_list(values: list[str]) -> TrackIndexKey:
+        '''
+        Create a track index key from a list of strings.
+
+        Arguments:
+            values - list of input strings
+        '''
+
+        if len(values) != 2:
+            return None
+
+        try:
+            discnumber = None if values[0] is None else int(values[0])
+            tracknumber = int(values[1])
+
+        except (ValueError, TypeError):
+            return None
+
+        return TrackIndexKey(discnumber, tracknumber)
 
 @dataclass(frozen=True, repr=False)
 class ArtistEntry:
@@ -118,6 +158,13 @@ class ArtistEntry:
         '''
 
         return len(self.names) == 0
+
+    def pretty(self) -> str:
+        '''
+        Return a pretty formatted string of the artist entry.
+        '''
+
+        return _pretty_names(self.names)
 
 @dataclass(frozen=True, repr=False)
 class ComposerEntry:
@@ -192,6 +239,13 @@ class ComposerEntry:
 
         return len(self.names) == 0
 
+    def pretty(self) -> str:
+        '''
+        Return a pretty formatted string of the composer entry.
+        '''
+
+        return _pretty_names(self.names) + f' ({self.function})'
+
 @dataclass(frozen=True, repr=False)
 class PerformerEntry:
     '''
@@ -210,11 +264,15 @@ class PerformerEntry:
         '2nd Choir',
         '2nd Violin',
         'Acoustic Guitar',
+        'Bansuri',
         'Bass',
+        'Bouzouki',
         'Cello',
         'Choir',
+        'Classical Guitar',
         'Dizi',
         'Double Bass',
+        'Duduk',
         'Electric Guitar',
         'Erhu',
         'Female Solo Vocals',
@@ -222,16 +280,24 @@ class PerformerEntry:
         'Guzheng',
         'Harp',
         'Harpsichord',
+        'Kanun',
         'Koto',
+        'Mandolin',
+        'Ney',
         'Orchestra',
+        'Oud',
         'Piano',
         'Pipa',
+        'Santur',
+        'Saz',
         'Shakuhachi',
         'Shaoqin',
         'Singer',
+        'Sitar',
         'Steel-Stringed Guitar',
         'Taiko',
         'Tsugaru Shamisen',
+        'Voice',
         'Viola',
         'Violin',
         'Xiao',
@@ -296,6 +362,19 @@ class PerformerEntry:
         '''
 
         return len(self.names) == 0
+
+    def pretty(self) -> str:
+        '''
+        Return a pretty formatted string of the performer entry.
+        '''
+
+        pretty = _pretty_names(self.names)
+        if pretty is None:
+            pretty = f'{self.function}:'
+        elif self.function is not None:
+            pretty += f' ({self.function})'
+
+        return pretty
 
 @dataclass(frozen=True, repr=False)
 class CommentEntry:
@@ -388,6 +467,13 @@ class CommentEntry:
 
         return self.function is None
 
+    def pretty(self) -> str:
+        '''
+        Return a pretty formatted string of the performer entry.
+        '''
+
+        return f'{self.function}: {_pretty_names(self.names)}'
+
 @dataclass(frozen=True)
 class BlockHeader:
     '''
@@ -463,6 +549,13 @@ class BlockHeader:
         '''
 
         return BlockHeader.from_line(line) is not None
+
+    def get_index(self) -> TrackIndexKey:
+        '''
+        Get the index key of the block header.
+        '''
+
+        return TrackIndexKey(self.discnumber, self.tracknumber)
 
 
 ##########################################################################################
@@ -625,9 +718,40 @@ class CreditBlock:
 
         return functions
 
+    def apply_tags(self, files: dict[TrackIndexKey, Path]) -> None:
+        '''
+        Apply all information from the credit block as tags.
+
+        Arguments:
+            files - map between track index and file path
+
+        The block header of the credit block is used to look up the correct
+        path in the :files: argument.
+        '''
+
+        idx = self._header.get_index()
+
+        path = files.get(idx)
+        if path is None:
+            return
+
+        artist = [a.pretty() for a in self._artist]
+        composer = [c.pretty() for c in self._composer]
+        performer = [p.pretty() for p in self._performer]
+        comment = [c.pretty() for c in self._comment]
+
+        entries = [
+            TagEntry(key='artist', value='\n'.join(artist)),
+            TagEntry(key='composer', value='\n'.join(composer)),
+            TagEntry(key='performer', value='\n'.join(performer)),
+            TagEntry(key='comment', value='\n'.join(comment)),
+        ]
+
+        vc_addtag(path, entries)
+
 class AlbumCreditsParser:
     '''
-    Flexible parser for track credits belonging to music albus.
+    Flexible parser for track credits belonging to music albums.
     '''
 
     def __init__(self, lines: list[str], verbose: bool) -> None:
@@ -739,6 +863,23 @@ class AlbumCreditsParser:
         list(map(lambda b: functions.update(b.get_functions(entry_type)), self._blocks))
 
         return list(functions)
+
+    def apply_tags(self, files: list[Path]) -> None:
+        '''
+        Apply all information of all credit blocks to a list of files.
+
+        Arguments:
+            files - list of file paths
+
+        The files are required to have the tracknumber and 
+        discnumber (if applicable) tag set.
+        '''
+
+        tags = ['discnumber', 'tracknumber']
+
+        files_map = {TrackIndexKey.from_list(gettag(f, tags)): f for f in files}
+
+        list(map(lambda b: b.apply_tags(files_map), self._blocks))
 
 
 ##########################################################################################
@@ -888,17 +1029,16 @@ def _merge_entries_generic(entries: list[GenericEntryType]) -> list[GenericEntry
 # Functions
 ##########################################################################################
 
-def vgmdb_albumcredits(directory_path: Path, credits_path: Path, verbose: bool) -> None:
+def vgmdb_albumcredits(directory_path: Path, credits_path: Path, just_print: bool, verbose: bool) -> None:
     '''
     Apply VGMdb album credits to FLAC files in a given directory.
 
     Arguments:
         directory_path - path to the directory which we should process
         credits_path   - path to the credits file that serves as input
+        just_print     - just print and don't apply any tags
         verbose        - should we enable verbose printing?
     '''
-
-    # TODO: do something with directory_path
 
     lines = credits_path.read_text(encoding='utf-8').splitlines()
 
@@ -915,7 +1055,14 @@ def vgmdb_albumcredits(directory_path: Path, credits_path: Path, verbose: bool) 
         for arg in (ComposerEntry, PerformerEntry, CommentEntry):
             print(f'\tFunctions for {arg.__name__}: {credits_parser.get_functions(arg)}', file=sys.stdout)
 
-    #print(credits_parser, file=sys.stdout)
+    if just_print:
+        print(credits_parser)
+    else:
+        mime = Magic(mime=True)
+
+        files = [x for x in path_walk(directory_path) if is_flac(mime, x)]
+
+        credits_parser.apply_tags(files)
 
 
 ##########################################################################################
@@ -934,6 +1081,7 @@ def main(args: list[str]) -> int:
 
     parser.add_argument('-d', '--directory', help='Directory where tags should be applied', required=True)
     parser.add_argument('-c', '--credits-file', help='File containing the input credits', required=True)
+    parser.add_argument('-p', '--print', action='store_true', help='Should we just print the tags (instead of applying them)?')
     parser.add_argument('-v', '--verbose', action='store_true', help='Should we enable verbose printing?')
 
     parsed_args = parser.parse_args(args[1:])
@@ -952,7 +1100,7 @@ def main(args: list[str]) -> int:
             return 2
 
         try:
-            vgmdb_albumcredits(directory_path, credits_path, parsed_args.verbose)
+            vgmdb_albumcredits(directory_path, credits_path, parsed_args.print, parsed_args.verbose)
 
         except Exception as exc:
             print(f'error: failed to apply album credits: {exc}', file=sys.stderr)

@@ -197,7 +197,7 @@ def musicpd_refresh(cfg: MPDConfig):
         etype = exc.get_type()
 
         if etype.is_critical():
-            print(f'error: critical MPD exception: {etype}', file=sys.stderr)
+            print(f'error: critical MPD exception: {etype.name}', file=sys.stderr)
 
         '''
         An MPD exception is most likely due to missing network connectivity to the

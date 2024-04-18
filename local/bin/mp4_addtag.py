@@ -9,10 +9,10 @@
 import sys
 
 from argparse import ArgumentParser
-from magic import Magic
 from pathlib import Path
 from typing import Any
 
+from magic import Magic
 from mutagen.mp4 import MP4, MP4FreeForm, MP4Tags, AtomDataType as MP4Atom
 
 from vc_addtag import TagEntry

@@ -78,7 +78,7 @@ def _get_meta_from_filetags(path: Path) -> tuple[int, int]:
     '''
 
     try:
-        values = gettag(path.absolute().as_posix(), ['discnumber', 'tracknumber'])
+        values = gettag(path, ['discnumber', 'tracknumber'])
 
     except RuntimeError:
         return None
@@ -90,7 +90,7 @@ def _get_meta_from_filetags(path: Path) -> tuple[int, int]:
         discnumber = None if values[0] is None else int(values[0])
         tracknumber = int(values[1])
 
-    except ValueError:
+    except (ValueError, TypeError):
         return None
 
     return (discnumber, tracknumber)
@@ -238,7 +238,7 @@ class TagDescriptor:
             return
 
         print(f'info: Applying title to: {self.path}: {self.title}')
-        vc_addtag(self.path, [TagEntry('title', self.title)])
+        vc_addtag(self.path, entries=[TagEntry('title', self.title)])
 
 
 ##########################################################################################
@@ -305,7 +305,7 @@ def _read_url(url: str) -> str:
 # Main
 ##########################################################################################
 
-def main(args: list) -> int:
+def main(args: list[str]) -> int:
     '''
     Main function.
     '''
@@ -444,7 +444,7 @@ def main(args: list) -> int:
 
         return 12
 
-    tag_descriptors = []
+    tag_descriptors: list[TagDescriptor] = list()
 
     try:
         for discnumber, disc in enumerate(discs):

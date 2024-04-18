@@ -9,9 +9,9 @@
 import sys
 
 from argparse import ArgumentParser
-from magic import Magic
 from pathlib import Path
 
+from magic import Magic
 from mutagen.flac import FLAC
 
 
