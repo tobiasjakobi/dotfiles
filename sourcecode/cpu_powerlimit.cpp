@@ -36,7 +36,7 @@ namespace CPUPowerlimit {
     static constexpr std::pair<float, float> kPowerlimitTDPBounds{8.0, 54.0};
 
     static std::string limit_scale(float value) {
-        const auto rescaled = static_cast<unsigned>(std::lround(value * 10000.0f));
+        const auto rescaled = static_cast<unsigned>(std::lround(value * 1000.0f));
 
         return std::to_string(rescaled);
     }
