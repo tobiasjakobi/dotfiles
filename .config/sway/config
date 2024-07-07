@@ -395,7 +395,7 @@ for_window [instance="pinentry-gtk-2"] floating enable
 
 # chat workspace
 for_window [instance="hexchat"] move container to workspace '3:chat'
-for_window [class="discord" instance="discord"] move container to workspace '3:chat'
+for_window [app_id="discord"] move container to workspace '3:chat'
 
 # music workspace
 for_window [instance="gmpc"] move container to workspace '4:music'

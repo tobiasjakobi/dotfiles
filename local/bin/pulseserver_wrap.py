@@ -93,16 +93,18 @@ class ConfigArguments:
     '''
     Dataclass encoding the configuration supplied via CLI arguments.
 
-    flatpak       - Are we wrapping a FlatPak application?
-    quirks        - List of quirks to apply (pulsefake)
-    affinity      - CPU affinity setting (see the enumerator for details)
-    print_log     - Print the log of the application?
-    dxvk_config   - DXVK config alias
-    envvar_config - Environment variable config alias
-    args          - arguments passed to subprocess
+    flatpak           - Are we wrapping a FlatPak application?
+    prefer_headphones - Should we prefer headphones for audio output?
+    quirks            - List of quirks to apply (pulsefake)
+    affinity          - CPU affinity setting (see the enumerator for details)
+    print_log         - Print the log of the application?
+    dxvk_config       - DXVK config alias
+    envvar_config     - Environment variable config alias
+    args              - arguments passed to subprocess
     '''
 
     flatpak: bool
+    prefer_headphones: bool
     quirks: list[str]
     affinity: CPUAffinity
     print_log: bool
@@ -123,6 +125,26 @@ def _defer_func(func, *parms, **kwparms):
 
 def _make_flatpak_args(cmd: str) -> list[str]:
     return [x.format(cmd) for x in _flatpak_args_template]
+
+def _is_pa_device_connected(device_names: list[str]) -> bool:
+    '''
+    Check if a PulseAudio device is connected.
+
+    Arguments:
+        device_name - name of the PulseAudio device
+    '''
+
+    p_args = ('/usr/bin/pactl', '--format=json', 'list', 'cards')
+
+    p = prun(p_args, check=True, capture_output=True, encoding='utf-8')
+
+    cards = jloads(p.stdout)
+
+    for card in cards:
+        if card.get('name') in device_names:
+            return True
+
+    return False
 
 def _is_server_available(server: str) -> bool:
     '''
@@ -206,6 +228,10 @@ def pulseserver_wrap(config_args: ConfigArguments) -> None:
     if envvar_map is None or not isinstance(envvar_map, dict):
         raise RuntimeError('invalid config: missing envvar map')
 
+    headphones = config.get('headphones')
+    if headphones is None or not isinstance(headphones, list):
+        raise RuntimeError('invalid config: missing headphones')
+
     # TODO: can we validate this some more?
 
     p_env = None
@@ -223,7 +249,11 @@ def pulseserver_wrap(config_args: ConfigArguments) -> None:
             if pulsefake.is_dir():
                 p_env['PATH'] = pulsefake.as_posix() + ':' + p_env['PATH']
 
-    if _is_server_available(pulse_server):
+    use_headphones = False
+    if config_args.prefer_headphones:
+        use_headphones = _is_pa_device_connected(headphones)
+
+    if not use_headphones and _is_server_available(pulse_server):
         print(f'info: pulse server available: {pulse_server}', file=sys.stdout)
 
         if p_env is None:
@@ -320,6 +350,7 @@ def main(args: list[str]) -> int:
     parser = ArgumentParser()
 
     parser.add_argument('-f', '--flatpak', action='store_true', help='Are we wrapping a flatpak application?')
+    parser.add_argument('-x', '--prefer-headphones', action='store_true', help='Should we prefer headphones for audio output?')
     parser.add_argument('-q', '--quirks', help='Apply any quirks? Quirks are comma-separated (pulsefake)')
     parser.add_argument('-a', '--affinity', choices=('single', 'physical'), help='Should we set the CPU affinity when launching the application?')
     parser.add_argument('-p', '--print-log', action='store_true', help='Should we print the log of the application?')
@@ -330,6 +361,7 @@ def main(args: list[str]) -> int:
 
     config = ConfigArguments(
         parsed_args.flatpak,
+        parsed_args.prefer_headphones,
         None if parsed_args.quirks is None else parsed_args.quirks.split(','),
         CPUAffinity.from_string(parsed_args.affinity),
         parsed_args.print_log,

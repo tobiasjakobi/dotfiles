@@ -17,7 +17,19 @@ function manage_kernel {
     local upstream_branch="linux-${version}"
     local downstream_prefix="tjakobi-${version}"
 
-    local downstream_components=("dellg5-amdgpu" "futex-waitv" "misc" "tcp-timewait" "amd-tsc" "winesync" "ayaneo-display" "amdgpu-color" "bmi260-imu")
+    local downstream_components=(
+        "dellg5-amdgpu"
+        "futex-waitv"
+        "misc"
+        "tcp-timewait"
+        "amd-tsc"
+        "winesync"
+        "ayaneo-display"
+        "ayaneo-fanctrl"
+        "amdgpu-color"
+        "bmi260-imu"
+    )
+
 
     local kernel_dir
     local merge_names=()

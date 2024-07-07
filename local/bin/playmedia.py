@@ -210,10 +210,8 @@ def playmedia(input_url: str, device_path: Path) -> None:
     profile handling.
     '''
 
-    if input_url.startswith('dvdnav://'):
-        input_type = InputType.DVDNav
-    elif input_url.startswith('dvdread://'):
-        input_type = InputType.DVDRead
+    if input_url.startswith('dvd://'):
+        input_type = InputType.DVD
     elif input_url.startswith('bd://'):
         input_type = InputType.BluRay
     else:
@@ -237,12 +235,11 @@ def playmedia(input_url: str, device_path: Path) -> None:
     if len(profiles) != 0:
         config.append('--profile={0}'.format(','.join(profiles)))
 
-    # Debug:
-    #print(config)
-
     if input_type == InputType.DVD:
         if device_path is not None and device_path.exists():
             config.append(f'--dvd-device={device_path.as_posix()}')
+
+        mpv_env = None
 
     elif input_type == InputType.BluRay:
         if device_path is not None and device_path.exists():
@@ -256,6 +253,9 @@ def playmedia(input_url: str, device_path: Path) -> None:
 
     else:
         raise RuntimeError('invalid input type')
+
+    if os_environ.get('DEBUG') is not None:
+        print(config)
 
     mpv_args = [_player_binary] + config + ['--', input_url]
 
