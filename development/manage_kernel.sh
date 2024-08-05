@@ -11,25 +11,22 @@ function _get_merge_base {
 }
 
 function manage_kernel {
-    local version="6.9.y"
+    local version="6.10.y"
 
     local upstream_remote="stable"
     local upstream_branch="linux-${version}"
     local downstream_prefix="tjakobi-${version}"
 
     local downstream_components=(
-        "dellg5-amdgpu"
-        "futex-waitv"
-        "misc"
-        "tcp-timewait"
         "amd-tsc"
-        "winesync"
+        "amdgpu-color"
         "ayaneo-display"
         "ayaneo-fanctrl"
-        "amdgpu-color"
         "bmi260-imu"
+        "dellg5-amdgpu"
+        "misc"
+        "winesync"
     )
-
 
     local kernel_dir
     local merge_names=()

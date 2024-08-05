@@ -57,6 +57,7 @@ output $primary_output {
     resolution 1920x1080
     position 0 0
     subpixel rgb
+    adaptive_sync on
 }
 
 output $secondary_output {
