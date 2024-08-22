@@ -19,6 +19,10 @@ if [[ $- != *i* ]]; then
   return
 fi
 
+if [[ -n "${SSH_CONNECTION}" ]]; then
+  export PS1="\[\e[01;34m\](SSH) ${PS1}"
+fi
+
 # Aliases
 alias chidori_ssh="ssh -YC -c chacha20-poly1305@openssh.com chidori-bt"
 alias dolphin="QT_QPA_PLATFORM=xcb PULSE_SERVER=audioserver dolphin-emu"
