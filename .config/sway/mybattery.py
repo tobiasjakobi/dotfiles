@@ -8,7 +8,8 @@
 
 import sys
 from pathlib import Path
-from sysfs_helper import read_sysfs
+
+from tjtools.sysfs_helper import read_sysfs
 
 
 ##########################################################################################
@@ -24,18 +25,15 @@ _sysfs_base = Path('/sys/class/power_supply/BAT0')
 ##########################################################################################
 
 def read_battery() -> str:
-    now_path = _sysfs_base / Path('charge_now')
-    full_path = _sysfs_base / Path('charge_full')
-
     try:
-        charge_now = int(read_sysfs(now_path.as_posix()))
-        charge_full = int(read_sysfs(full_path.as_posix()))
+        charge_now = int(read_sysfs(_sysfs_base / 'charge_now'))
+        charge_full = int(read_sysfs(_sysfs_base / 'charge_full'))
 
     except Exception:
         return None
 
     try:
-        ac_state = int(_state_file.read_text(encoding='utf-8').rstrip())
+        ac_state = int.from_bytes(_state_file.read_bytes(), byteorder='little')
 
     except Exception:
         return None

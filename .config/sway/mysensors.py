@@ -17,7 +17,7 @@ from pathlib import Path
 from re import compile as rcompile
 from typing import Any
 
-from sysfs_helper import read_sysfs, get_parent_device
+from tjtools.sysfs_helper import read_sysfs, get_parent_device
 
 
 ##########################################################################################
@@ -27,7 +27,7 @@ from sysfs_helper import read_sysfs, get_parent_device
 '''
 sysfs base path for hardware monitoring devices.
 '''
-_sysfs_base = Path('/sys/class/hwmon/')
+_sysfs_base = Path('/sys/class/hwmon')
 
 '''
 Path to config file for the sensors.
@@ -100,12 +100,12 @@ class SensorIdentifier:
             path - the sysfs device path
         '''
 
-        device_path = path / Path('device')
-        vendor_path = path / Path('vendor')
+        device_path = path / 'device'
+        vendor_path = path / 'vendor'
 
         try:
-            device_id = int(read_sysfs(device_path.as_posix()), 16)
-            vendor_id = int(read_sysfs(vendor_path.as_posix()), 16)
+            device_id = int(read_sysfs(device_path), 16)
+            vendor_id = int(read_sysfs(vendor_path), 16)
 
         except (ValueError, TypeError):
             return False
@@ -161,13 +161,9 @@ class ATASensorIdentifer:
             path - the sysfs device path
         '''
 
-        vendor_path = path / Path('vendor')
-        model_path = path / Path('model')
-        revision_path = path / Path('rev')
-
-        vendor = read_sysfs(vendor_path.as_posix())
-        model = read_sysfs(model_path.as_posix())
-        revision = read_sysfs(revision_path.as_posix())
+        vendor = read_sysfs(path / 'vendor')
+        model = read_sysfs(path / 'model')
+        revision = read_sysfs(path / 'rev')
 
         return vendor == self.vendor and model == self.model and revision == self.revision
 
@@ -229,7 +225,7 @@ class SensorDescriptor:
             if not _label_re.findall(entry.name):
                 continue
 
-            sensor_label = read_sysfs(entry.as_posix())
+            sensor_label = read_sysfs(entry)
             if sensor_label == self.label:
                 return entry.name
 
@@ -242,19 +238,17 @@ class SensorDescriptor:
         Arguments:
             path - sysfs path of sensor device
         '''
-    
-        name_path = path / Path('name')
 
-        sensor_driver = read_sysfs(name_path.as_posix())
+        sensor_driver = read_sysfs(path / 'name')
         if sensor_driver != self.driver:
             return None
 
         if self.sensor_type == SensorType.Default:
-            parent_device = Path(get_parent_device(path.as_posix()))
+            parent_device = get_parent_device(path)
             if not self.identifier.is_match(parent_device):
                 return None
         elif self.sensor_type == SensorType.ATA:
-            parent_device = path / Path('device')
+            parent_device = path / 'device'
             if not self.ata_identifier.is_match(parent_device):
                 return None
         else:
@@ -273,7 +267,7 @@ class SensorDescriptor:
         else:
             prefix = 'temp1'
 
-        value_path = path / Path(f'{prefix}_input')
+        value_path = path / f'{prefix}_input'
 
         return SensorContext(self, value_path, parent_device)
 
@@ -424,7 +418,7 @@ class SensorContext:
         Internal read helper.
         '''
 
-        value = read_sysfs(self.value_path.as_posix())
+        value = read_sysfs(self.value_path)
 
         if value is None or not value.isdigit():
             return 'Error'
@@ -436,11 +430,11 @@ class SensorContext:
         Check if the sensor is online.
         '''
 
-        status_path = self.parent_path / Path('power/runtime_status')
+        status_path = self.parent_path / 'power/runtime_status'
         if not status_path.is_file():
             return False
 
-        runtime_status = read_sysfs(status_path.as_posix())
+        runtime_status = read_sysfs(status_path)
         if runtime_status is None:
             return False
 
@@ -466,11 +460,11 @@ class SensorContext:
         if not self.is_online():
             return None
 
-        busy_path = self.parent_path / Path('gpu_busy_percent')
+        busy_path = self.parent_path / 'gpu_busy_percent'
         if not busy_path.is_file():
             return None
 
-        value = read_sysfs(busy_path.as_posix())
+        value = read_sysfs(busy_path)
         if value is None or not value.isdigit():
             return None
 
