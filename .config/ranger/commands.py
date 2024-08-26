@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
 
-# TODO: do we need this?
-#from __future__ import (absolute_import, division, print_function)
-
 from os.path import dirname, exists, isdir, join as pjoin, split as psplit
 from os import makedirs, rename, unlink, walk
 from tempfile import NamedTemporaryFile

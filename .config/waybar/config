@@ -35,19 +35,11 @@
         "tooltip-format-disconnected": "Disconnected",
         "max-length": 50
     },
-    "custom/alsamixer": {
-        "format": "AMixer: {}",
-        "return-type": "json",
-        "max-length": 30,
-        "exec": "${HOME}/.config/waybar/alsamixer.py --daemon",
-        "on-scroll-up": "${HOME}/.config/waybar/alsamixer.py --action=volume_up",
-        "on-scroll-down": "${HOME}/.config/waybar/alsamixer.py --action=volume_down"
-    },
     "custom/musicpd": {
         "format": "MusicPD: {}",
         "return-type": "json",
         "max-length": 30,
-        "exec": "${HOME}/.config/waybar/musicpd.py",
+        "exec": "waybar_musicpd",
         "on-click": "mpc --quiet toggle",
         "on-click-right": "gmpc",
         "on-scroll-up": "mpc --quiet next",
@@ -58,7 +50,7 @@
         "format": "CMus: {}",
         "return-type": "json",
         "max-length": 30,
-        "exec": "${HOME}/.config/waybar/cmus.py",
+        "exec": "waybar_cmus",
         "on-click": "cmus-remote --pause",
         "on-scroll-up": "cmus-remote --next",
         "on-scroll-down": "cmus-remote --prev",
@@ -67,7 +59,7 @@
     "custom/rifle-monitor": {
         "format": "Rifle: {0:2}",
         "return-type": "json",
-        "exec": "${HOME}/.config/waybar/rifle_monitor.py",
-        "escape": true
+        "exec": "rifle_monitor",
+        "escape": false
     }
 }

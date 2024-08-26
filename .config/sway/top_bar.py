@@ -14,8 +14,8 @@ from time import sleep
 
 from psutil import cpu_count, disk_partitions, disk_usage
 
-from mysensors import SensorConfiguration, SensorContext, SensorDescriptor
-from mybattery import read_battery
+from tjtools.sway_sensors import SensorConfiguration, SensorContext, SensorDescriptor
+from tjtools.sway_battery import read_battery
 
 '''
 References:

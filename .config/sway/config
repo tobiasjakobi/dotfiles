@@ -73,10 +73,10 @@ output $secondary_output {
 ######################################################################################################
 
 exec swayidle -w \
-    timeout 600 "${HOME}/.config/sway/idle.py --lock" \
-    timeout 900 "${HOME}/.config/sway/idle.py --display-off" \
-        resume "${HOME}/.config/sway/idle.py --display-on" \
-    lock "${HOME}/.config/sway/idle.py --lock"
+    timeout 600 "sway_idle --lock" \
+    timeout 900 "sway_idle --display-off" \
+        resume "sway_idle --display-on" \
+    lock "sway_idle --lock"
 
 
 ######################################################################################################
@@ -164,10 +164,10 @@ input "5426:132:Razer_Razer_DeathAdder_V2" {
     ## Screenshots:
 
     # Screenshot of the entire screen
-    bindsym $mod+Print exec ${HOME}/local/bin/swayshot.py --full
+    bindsym $mod+Print exec swayshot --full
 
     # Screenshot of selected area of screen
-    bindsym $mod+Shift+Print exec ${HOME}/local/bin/swayshot.py --select
+    bindsym $mod+Shift+Print exec swayshot --select
 
     ##################################################################################################
     ## Multimedia keys:
@@ -425,4 +425,4 @@ exec {
 workspace '6:work'
 exec $terminal
 
-exec /usr/local/bin/touchpad_control.sh --auto
+exec touchpad_control --mode=auto
