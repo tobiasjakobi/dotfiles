@@ -11,7 +11,7 @@ function _get_merge_base {
 }
 
 function manage_kernel {
-    local version="6.10.y"
+    local version="6.11.y"
 
     local upstream_remote="stable"
     local upstream_branch="linux-${version}"
@@ -20,7 +20,6 @@ function manage_kernel {
     local downstream_components=(
         "amd-tsc"
         "amdgpu-color"
-        "ayaneo-display"
         "ayaneo-fanctrl"
         "bmi260-imu"
         "dellg5-amdgpu"

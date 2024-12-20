@@ -12,8 +12,8 @@ function dispconf {
     output="${1}"
 
     swaynag --type info --message "External display configuration:" \
-            --button-dismiss "FHD (1920x1080)" "/usr/bin/wlr-randr --output ${output} --on --pos ${position} --mode 1920x1080@60.000"  \
-            --button-dismiss "UHD (3840x2160)" "/usr/bin/wlr-randr --output ${output} --on --pos ${position} --mode 3840x2160@59.997"
+            --button-dismiss "FHD (1920x1080)" "wlr-randr --output ${output} --on --pos ${position} --mode 1920x1080@60.000"  \
+            --button-dismiss "UHD (3840x2160)" "wlr-randr --output ${output} --on --pos ${position} --mode 3840x2160@59.997"
 }
 
 dispconf "$@"

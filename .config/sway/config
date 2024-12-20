@@ -32,7 +32,7 @@ set $mailclient thunderbird
 set $filemanager ranger
 
 # Application launcher
-set $menu j4-dmenu-desktop --dmenu=${HOME}/.config/sway/menu.sh --no-generic --term=$terminal
+set $menu j4-dmenu-desktop --dmenu=sway_appmenu.sh --no-generic --term=$terminal
 
 # Primary output (integrated display connected to eDP port of the integrated GPU)
 set $primary_output 'eDP-1'
@@ -151,8 +151,8 @@ input "5426:132:Razer_Razer_DeathAdder_V2" {
     # Exit sway (logs you out of your Wayland session)
     bindsym $mod+Shift+e exec swaynag --type warning --message $exitmsg --button 'Yes, exit sway' ${HOME}/.config/sway/exit-session.sh
 
-    # CPU performance mode selection
-    bindsym $mod+Shift+p exec ${HOME}/.config/sway/cpuperf.sh
+    # CPU powerlimit selection
+    bindsym $mod+Shift+p exec nag_helper --cpu-powerlimit
 
     # Toggle secondary output on/off
     bindsym $mod+Shift+o output $secondary_output toggle
@@ -178,9 +178,9 @@ input "5426:132:Razer_Razer_DeathAdder_V2" {
     bindsym --locked XF86AudioMute exec pactl set-sink-mute @DEFAULT_SINK@ toggle
 
     # Audio play/next/prev
-    bindsym --locked XF86AudioPlay exec ${HOME}/.config/sway/multimedia.py --play
-    bindsym --locked XF86AudioNext exec ${HOME}/.config/sway/multimedia.py --next
-    bindsym --locked XF86AudioPrev exec ${HOME}/.config/sway/multimedia.py --prev
+    bindsym --locked XF86AudioPlay exec sway_multimedia --play
+    bindsym --locked XF86AudioNext exec sway_multimedia --next
+    bindsym --locked XF86AudioPrev exec sway_multimedia --prev
 
     ##################################################################################################
     ## Moving around:
@@ -293,6 +293,20 @@ input "5426:132:Razer_Razer_DeathAdder_V2" {
 
     bindsym $mod+r mode "resize"
 
+    ##################################################################################################
+    ## Enter VNC passthrough mode
+
+    bindsym $mod+Pause mode "passthrough"
+
+
+######################################################################################################
+### VNC passthrough mode
+######################################################################################################
+
+mode "passthrough" {
+    bindsym $mod+Pause mode default
+}
+
 
 ######################################################################################################
 ### Resizing mode
@@ -361,7 +375,7 @@ include /etc/sway/config.d/*
 exec mako
 
 # Setup IM framework
-#exec fcitx -r
+exec fcitx5 --replace
 
 # This is needed for xdg-desktop-portal-wlr
 exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=sway
