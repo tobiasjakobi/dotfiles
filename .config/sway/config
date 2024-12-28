@@ -296,7 +296,7 @@ input "5426:132:Razer_Razer_DeathAdder_V2" {
     ##################################################################################################
     ## Enter VNC passthrough mode
 
-    bindsym $mod+Pause mode "passthrough"
+    bindsym $mod+Shift+Home mode "passthrough"
 
 
 ######################################################################################################
@@ -304,7 +304,7 @@ input "5426:132:Razer_Razer_DeathAdder_V2" {
 ######################################################################################################
 
 mode "passthrough" {
-    bindsym $mod+Pause mode default
+    bindsym $mod+Shift+Home mode default
 }
 
 

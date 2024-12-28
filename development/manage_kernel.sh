@@ -11,7 +11,7 @@ function _get_merge_base {
 }
 
 function manage_kernel {
-    local version="6.11.y"
+    local version="6.12.y"
 
     local upstream_remote="stable"
     local upstream_branch="linux-${version}"
@@ -24,6 +24,7 @@ function manage_kernel {
         "bmi260-imu"
         "dellg5-amdgpu"
         "misc"
+        "rockchip-aw87xxx"
         "winesync"
     )
 
