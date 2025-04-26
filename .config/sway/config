@@ -401,7 +401,7 @@ font pango:Literation Sans 14
 workspace_layout tabbed
 
 # browser workspace
-for_window [app_id="firefox"] move container to workspace '1:browser'
+for_window [app_id="(firefox|firefox-esr)"] move container to workspace '1:browser'
 for_window [app_id="chromium-browser-chromium"] move container to workspace '1:browser'
 
 # mail workspace

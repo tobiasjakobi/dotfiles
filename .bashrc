@@ -27,7 +27,7 @@ fi
 alias chidori_ssh="ssh -YC -c chacha20-poly1305@openssh.com chidori-bt"
 alias dolphin="QT_QPA_PLATFORM=xcb PULSE_SERVER=audioserver dolphin-emu"
 alias editor="featherpad --standalone"
-alias vvv="${HOME}/local/VirtualVolumesView-1.4.0/vvv-start.sh"
+alias vvv="${HOME}/local/VirtualVolumesView-1.5.0-x86_64/vvv-start.sh"
 
 # Load functions
 source ${HOME}/.bashrc.extern
